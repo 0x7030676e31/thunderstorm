@@ -1,0 +1,24 @@
+[package]
+name = "thunderstorm"
+version = "0.0.1"
+description = "A simple file manager"
+authors = ["0x7030676e31"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[build-dependencies]
+tauri-build = { version = "1.5", features = [] }
+
+[dependencies]
+tauri = { version = "1.5", features = [ "dialog-open", "notification-all", "dialog-save"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+log = "0.4.20"
+pretty_env_logger = "0.5.0"
+tokio = { version = "1.36.0", features = ["rt-multi-thread", "macros"] }
+
+[features]
+# this feature is used for production builds or when `devPath` points to the filesystem
+# DO NOT REMOVE!!
+custom-protocol = ["tauri/custom-protocol"]

@@ -1,0 +1,159 @@
+$background-dark: #181825;
+$background: #1e1e2e;
+$hover: #413956;
+$select: #cba6f7;
+$text: #bac2de;
+$text-hover: #f2cdcd;
+
+$header-height: 60px;
+
+body {
+  margin: 0;
+}
+
+.modal {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background-color: $background-dark;
+  padding: 30px;
+  width: 350px;
+  border-radius: 5px;
+  box-shadow: 0 0 10px 0 rgba(0, 0, 0, 0.2);
+
+  p {
+    color: $text;
+    font-size: 20px;
+    margin:0;
+    user-select: none;
+  }
+
+  p:not(:first-child) {
+    margin-top: 30px;
+  }
+
+  input {
+    width: calc(100% - 20px);
+    padding: 10px;
+    margin-top: 10px;
+    background-color: $background;
+    font-size: 16px;
+    border: none;
+    color: $text;
+    border-radius: 3px;
+  }
+
+  button {
+    width: 100%;
+    padding: 10px;
+    margin-top: 40px;
+    background-color: $select;
+    color: $background-dark;
+    font-size: 16px;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: background-color 0.1s;
+
+    &:hover {
+      background-color: $text-hover;
+    }
+
+    &:active {
+      transform: translateY(2px);
+    }
+  }
+}
+
+.header {
+  background-color: $background-dark;
+  height: $header-height;
+  width: 100%;
+  border-bottom: 1px solid $hover;
+  display: flex;
+  justify-content: space-between;
+}
+
+.header > div {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  padding: 0 10px;
+}
+
+.box-icon {
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s;
+  box-sizing: border-box;
+  border-radius: 5px;
+  border: 1px solid transparent;
+
+  &:hover {
+    background-color: $hover;
+    border: 1px solid $select;
+  }
+
+  svg {
+    color: $text;
+    font-size: 25px;
+  }
+}
+
+.files {
+  height: calc(100vh - $header-height - 1px);
+  background-color: $background;
+  overflow-y: scroll;
+}
+
+.file {
+  width: 100%;
+  display: flex;
+  padding: 10px;
+  cursor: pointer;
+  transition: background-color 0.3s;
+
+  &:hover {
+    background-color: $hover;
+  }
+
+  svg {
+    font-size: 40px;
+    color: $text;
+  }
+}
+
+.even {
+  background-color: $background;
+}
+
+.odd {
+  background-color: $background-dark;
+}
+
+.selected {
+  background-color: $select !important;
+}
+
+.info {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  padding: 0 10px;
+
+  p {
+    margin: 0;
+    align-self: center;
+    color: $text;
+    font-size: 16px;
+  }
+
+  p:last-child {
+    padding-right: 10px;
+  }
+}
