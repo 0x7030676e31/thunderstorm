@@ -1,118 +1,90 @@
-import { createSignal, onMount, For, Show } from "solid-js";
+import { createSignal, onMount, batch, createEffect } from "solid-js";
+import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/api/notification";
 import { open } from "@tauri-apps/api/dialog";
-import { invoke } from "@tauri-apps/api";
-import { Portal } from "solid-js/web";
-import { FiPlus } from "solid-icons/fi";
-import { AiFillFileText } from 'solid-icons/ai'
+import { listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/tauri";
+import Content from "./components/content";
+import Header from "./components/header";
 import "./index.scss";
 
-interface File {
-  name: string,
-  size: number,
-  clusters: string[],
-  modified: number,
-  created: number,
-}
-
-interface State {
-  token: string | null,
-  aes_key: string | null,
-  storage_channel: string | null,
-  files: File[],
-}
-
 export default function App() {
+  const [ pendingFiles, setPendingFiles ] = createSignal<PendingFile[]>([]);
   const [ files, setFiles ] = createSignal<File[]>([]);
-  const [ modal, setModal ] = createSignal<boolean>(false);
+  const [ selected, setSelected ] = createSignal<number[] | null>(null);
+  const [ query, setQuery ] = createSignal<string>("");
 
-  let token!: HTMLInputElement;
-  let aes_key!: HTMLInputElement;
-  let storage_channel!: HTMLInputElement;
+  onMount(async () => {
+    const files: File[] = await invoke<string>("get_files").then(state => JSON.parse(state));
+    setFiles(files.reverse());
 
-  async function submit() {
-    setModal(false);
-    await invoke("set_state", {
-      token: token.value,
-      aesKey: aes_key.value,
-      storageChannel: storage_channel.value,
+    // listen("tauri://file-drop", async ({ payload }) => {
+    //   console.log(payload);
+    // });
+
+    listen<number>("uploading", async ({ payload }) => {
+      setPendingFiles(files => {
+        const pending = structuredClone(files);
+        pending[0].size = payload;
+        return pending;
+      });
     });
-  }
+
+    listen<void>("uploaded", async () => {
+      const file = pendingFiles()[0].name;
+      let permissionGranted = await isPermissionGranted();
+      if (!permissionGranted) {
+        const permission = await requestPermission();
+        permissionGranted = permission === "granted";
+      }
+
+      if (permissionGranted) {
+        sendNotification({ title: "File uploaded", body: `The file ${file} has been uploaded` });
+      }
+
+      const files = await invoke<string>("get_files").then(state => JSON.parse(state));
+      batch(() => {
+        setFiles(files.reverse());
+        setPendingFiles(files => {
+          const pending = structuredClone(files);
+          pending.shift();
+          return pending;
+        });
+      });
+    });
+  });
 
   async function addFile() {
     const file = await open({});
-    if (!file) return;
-  
-    const data = await invoke<string>("add_file", { file }).then<File>(JSON.parse);
-    setFiles([...files(), data]);
+    if (!file || Array.isArray(file)) return;
+
+    const name = file.split("/").pop()!;
+    setPendingFiles(files => [ { name, size: null }, ...files ]);
+    await invoke("add_file", { file });
   }
 
-  onMount(async () => {
-    const state = await invoke<string>("get_state").then<State>(JSON.parse);
-    setFiles(state.files);
+  async function deleteFile() {
+    if (selected() === null) return;
+    await invoke("delete_file", { file: files()[selected()![0]].created });
+  }
 
-    token.value = state.token || "";
-    aes_key.value = state.aes_key || "";
-    storage_channel.value = state.storage_channel || "";
+  function select(idx: number | null) {
+    if (idx === null) return setSelected(null);
+    setSelected(selected()?.[0] === idx ? null : [ idx ]);
+  }
 
-    if (!state.token || !state.aes_key || !state.storage_channel) {
-      setModal(true);
+  createEffect(() => {
+    Array.from(document.getElementsByClassName("selected")).forEach(el => el.classList.remove("selected"));
+    if (selected() !== null) {
+      const files = document.getElementsByClassName("file");
+      selected()!.forEach(idx => files[idx].classList.add("selected"));
     }
   });
 
   return (
-    <div class="content">
-      <Show when={modal()}>
-        <Portal mount={document.body}>
-          <div class="modal">
-            <p>Token</p>
-            <input type="text" ref={token} />
-            <p>AES Key</p>
-            <input type="text" ref={aes_key} />
-            <p>Storage Channel</p>
-            <input type="text" ref={storage_channel} />
-            <br/>
-            <button onClick={submit}>Submit</button>
-          </div>
-        </Portal>
-      </Show>
-
-      <Header addFile={addFile} />
-      <div class="files">
-        <For each={files()}>
-          {(file, idx) => <File file={file} idx={idx()} />}
-        </For>
-      </div>
+    <div class="app">
+      <Header addFile={addFile} query={query} setQuery={setQuery} selected={selected} deleteFile={deleteFile} />
+      <Content files={files} pendingFiles={pendingFiles} select={select} query={query} />
     </div>
   )
 }
 
-function Header({ addFile }: { addFile: () => void }) {
-  return <div class="header">
-    <div class="left">
-      <div class="box-icon" onClick={addFile}>
-        <FiPlus />
-      </div>
-    </div>
-    <div class="right"></div>
-  </div>
-}
-
-function unit(bytes: number) {
-  const units = ["Bytes", "KiB", "MiB", "GiB", "TiB"];
-  let i = 0;
-  while (bytes >= 1024) {
-    bytes /= 1024;
-    i++;
-  }
-  return `${+bytes.toFixed(2)} ${units[i]}`;
-}
-
-function File({ file, idx }: { file: File, idx: number }) {
-  return <div class={`file ${idx % 2 === 0 ? "even" : "odd"}`}>
-    <AiFillFileText />
-    <div class="info">
-      <p>{file.name}</p>
-      <p>{unit(file.size)}</p>
-    </div>
-  </div>
-}

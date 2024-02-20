@@ -1,49 +1,34 @@
-use crate::state::File;
 use crate::AppState;
 
-use std::{fs, time};
-
+use textdistance::nstr::damerau_levenshtein;
 use tauri::State;
 
 #[tauri::command]
-pub async fn get_state(state: State<'_, AppState>) -> Result<String, ()> {
+pub async fn get_files(state: State<'_, AppState>) -> Result<String, ()> {
   let state = state.lock().await;
-  Ok(serde_json::to_string(&*state).unwrap())
+  Ok(serde_json::to_string(&state.files).unwrap())
 }
 
 #[tauri::command]
-pub async fn set_state(state: State<'_, AppState>, token: String, aes_key: String, storage_channel: String) -> Result<(), ()> {
+pub async fn add_file(state: State<'_, AppState>, file: String) -> Result<(), ()> {
   let mut state = state.lock().await;
-  state.token = Some(token);
-  state.aes_key = Some(aes_key);
-  state.storage_channel = Some(storage_channel);
-
-  log::info!("Updated state");
-  state.write();
-
+  log::debug!("Adding file: {}", file);
+  state.schedule_upload(file);
   Ok(())
 }
 
 #[tauri::command]
-pub async fn add_file(state: State<'_, AppState>, file: String) -> Result<String, ()> {
-  let mut state = state.lock().await;
-  let file_name = file.split("/").last().unwrap().to_string();
-  let file = fs::metadata(file).unwrap();
+pub async fn search(state: State<'_, AppState>, query: String) -> Result<String, ()> {
+  let state = state.lock().await;
+  
+  let mut files = state.files.iter().map(|file| (file, damerau_levenshtein(&file.name, &query))).collect::<Vec<_>>();
+  files.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
 
-  let now = time::SystemTime::now().duration_since(time::UNIX_EPOCH).unwrap().as_millis() as u64;
-  let file = File {
-    name: file_name,
-    size: file.len(),
-    clusters: vec![],
-    modified: now,
-    created: now,
-  };
+  Ok(serde_json::to_string(&files.iter().filter(|(_, distance)| *distance < 0.5).map(|(file, _)| file).collect::<Vec<_>>()).unwrap())
+}
 
-  let data = serde_json::to_string(&file).unwrap();
-  state.files.push(file);
-
-  log::info!("Added file to state");
-  state.write();
-
-  Ok(data)
+#[tauri::command]
+pub async fn delete_file(state: State<'_, AppState>, file: u64) -> Result<(), ()> {
+  println!("Deleting file: {}", file);
+  Ok(())
 }

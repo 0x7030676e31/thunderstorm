@@ -29,10 +29,10 @@
         "fullscreen": false,
         "resizable": true,
         "title": "Thunderstorm",
-        "width": 900,
+        "width": 1100,
         "height": 700,
         "minWidth": 800,
-        "minHeight": 600
+        "minHeight": 500
       }
     ],
     "security": {

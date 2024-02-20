@@ -1,0 +1,59 @@
+@import "../palette.scss";
+
+.file {
+  width: 100vw;
+  padding: 10px;
+  color: $text;
+  display: grid;
+  grid-gap: 10px;
+  box-sizing: border-box;
+  transition: background-color 100ms;
+
+  svg {
+    font-size: 40px;
+    transition: color 100ms;
+  }
+
+  div {
+    transition: color 100ms;
+  }
+
+  &:hover {
+    background-color: transparentize($mauve, 0.9) !important;
+  }
+}
+
+.file:not(.pendingFile) {
+  grid-template-columns: auto 1fr auto auto;
+}
+
+.pendingFile {
+  grid-template-columns: auto 1fr auto;
+
+  svg {
+    color: $peach;
+  }
+}
+
+.file:nth-child(odd) {
+  background-color: $base;
+}
+
+.file:nth-child(even) {
+  background-color: $mantle;
+}
+
+.name {
+  align-self: center;
+}
+
+.size {
+  align-self: center;
+  text-align: right;
+}
+
+.created {
+  align-self: center;
+  text-align: right;
+  margin-left: 10px;
+}
