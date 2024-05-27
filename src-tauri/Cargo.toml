@@ -1,0 +1,25 @@
+[package]
+name = "thunderstorm"
+version = "0.0.1"
+description = "Yet another discord storage client"
+authors = ["0x7030676e31"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[build-dependencies]
+tauri-build = { version = "1", features = [] }
+
+[dependencies]
+tauri = { version = "1", features = [ "dialog-save", "dialog-open"] }
+serde = { version = "1.0.203", features = ["derive"] }
+tokio = { version = "1.37.0", features = ["rt-multi-thread", "macros", "time"] }
+serde_json = "1.0.117"
+log = "0.4.21"
+pretty_env_logger = "0.5.0"
+futures = "0.3.30"
+reqwest = { version = "0.12.4", features = ["json", "stream"] }
+
+[features]
+# This feature is used for production builds or when a dev server is not specified, DO NOT REMOVE!!
+custom-protocol = ["tauri/custom-protocol"]

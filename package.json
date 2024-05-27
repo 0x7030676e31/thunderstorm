@@ -1,0 +1,26 @@
+{
+  "name": "thunderstorm",
+  "version": "0.0.0",
+  "description": "",
+  "type": "module",
+  "scripts": {
+    "start": "vite",
+    "dev": "vite",
+    "build": "vite build",
+    "serve": "vite preview",
+    "tauri": "tauri"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@tauri-apps/api": "^1",
+    "sass": "^1.77.2",
+    "solid-icons": "^1.1.0",
+    "solid-js": "^1.7.8"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.2",
+    "vite": "^5.0.0",
+    "vite-plugin-solid": "^2.8.0",
+    "@tauri-apps/cli": "^1"
+  }
+}

@@ -1,0 +1,14 @@
+@import "./palette.scss";
+
+body {
+  margin: 0;
+  font-family: "Roboto", sans-serif;
+  background-color: $base;
+}
+
+.app {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
