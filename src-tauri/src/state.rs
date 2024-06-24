@@ -4,18 +4,11 @@ use crate::AppState;
 use std::collections::VecDeque;
 use std::path::Path;
 use std::sync::OnceLock;
-use std::{env, fmt, fs, ptr};
+use std::{env, fs, ptr};
 
 use rand::Rng;
 use tauri::AppHandle;
 use serde::{Serialize, Deserialize};
-use serde::de::{
-  Deserializer,
-  Error,
-  IgnoredAny,
-  MapAccess,
-  Visitor,
-};
 
 fn path() -> &'static str {
   static PATH: OnceLock<String> = OnceLock::new();
@@ -48,7 +41,7 @@ impl Default for RtState {
   }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct State {
   pub next_id: u32,
   pub channel_id: String,
@@ -57,7 +50,7 @@ pub struct State {
   pub files: Vec<File>,
   
   #[serde(with = "serde_bytes")]
-  pub encryption_key: [u8; 64],
+  pub encryption_key: [u8; 32],
   #[serde(skip)]
   pub rt: RtState,
 }
@@ -65,110 +58,10 @@ pub struct State {
 unsafe impl Send for State {}
 unsafe impl Sync for State {}
 
-impl<'de> Deserialize<'de> for State {
-  fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-  where
-    D: Deserializer<'de>,
-  {
-    const FIELDS: &[&str] = &["next_id", "channel_id", "guild_id", "token", "files", "encryption_key"];
-
-    struct StateVisitor;
-
-    impl<'de> Visitor<'de> for StateVisitor {
-      type Value = State;
-
-      fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        formatter.write_str("struct State")
-      }
-
-      fn visit_map<V>(self, mut map: V) -> Result<Self::Value, V::Error>
-      where
-        V: MapAccess<'de>,
-      {
-        let mut next_id = None;
-        let mut channel_id = None;
-        let mut guild_id = None;
-        let mut token = None;
-        let mut files = None;
-        let mut encryption_key = None;
-
-        while let Some(key) = map.next_key()? {
-          match key {
-            "next_id" => {
-              if next_id.is_some() {
-                return Err(Error::duplicate_field("next_id"));
-              }
-              next_id = Some(map.next_value()?);
-            }
-            "channel_id" => {
-              if channel_id.is_some() {
-                return Err(Error::duplicate_field("channel_id"));
-              }
-              channel_id = Some(map.next_value()?);
-            }
-            "guild_id" => {
-              if guild_id.is_some() {
-                return Err(Error::duplicate_field("guild_id"));
-              }
-              guild_id = Some(map.next_value()?);
-            }
-            "token" => {
-              if token.is_some() {
-                return Err(Error::duplicate_field("token"));
-              }
-              token = Some(map.next_value()?);
-            }
-            "files" => {
-              if files.is_some() {
-                return Err(Error::duplicate_field("files"));
-              }
-              files = Some(map.next_value()?);
-            }
-            "encryption_key" => {
-              if encryption_key.is_some() {
-                return Err(Error::duplicate_field("encryption_key"));
-              }
-
-              let key = map.next_value::<&[u8]>()?;
-              encryption_key = Some([0; 64]);
-
-              encryption_key.as_mut().map(|k| {
-                k.copy_from_slice(key);
-              });
-            }
-            _ => {
-              let _ = map.next_value::<IgnoredAny>()?;
-            }
-          }
-        }
-
-        let next_id = next_id.ok_or_else(|| Error::missing_field("next_id"))?;
-        let channel_id = channel_id.ok_or_else(|| Error::missing_field("channel_id"))?;
-        let guild_id = guild_id.ok_or_else(|| Error::missing_field("guild_id"))?;
-        let token = token.ok_or_else(|| Error::missing_field("token"))?;
-        let files = files.ok_or_else(|| Error::missing_field("files"))?;
-        let encryption_key = encryption_key.ok_or_else(|| Error::missing_field("encryption_key"))?;
-
-        Ok(State {
-          next_id,
-          channel_id,
-          guild_id,
-          token,
-          files,
-          encryption_key,
-          rt: RtState::default(),
-        })
-      }
-    }
-
-    deserializer.deserialize_struct("State", FIELDS, StateVisitor)
-  }
-}
-
 impl Default for State {
   fn default() -> Self {
     let mut rng = rand::thread_rng();
-    let mut key = [0; 64];
+    let mut key = [0; 32];
     rng.fill(&mut key[..]);
 
     Self {
@@ -201,7 +94,7 @@ impl State {
       fs::create_dir_all(app_data).expect("failed to create app data directory");
     }
 
-    let state_file = format!("{}/state.json", app_data);
+    let state_file = format!("{}/state.bin", app_data);
     if !Path::new(&state_file).exists() {
       return Self::default();
     }
@@ -224,7 +117,7 @@ impl State {
   }
 
   pub fn write(&self) {
-    let state_file = format!("{}/state.json", path());
+    let state_file = format!("{}/state.bin", path());
     let state = match bincode::serialize(&self) {
       Ok(state) => state,
       Err(e) => {
@@ -235,6 +128,12 @@ impl State {
 
     if let Err(e) = fs::write(&state_file, state) {
       log::error!("failed to write state file: {}", e);
+    }
+  }
+
+  pub fn get_app_handle(&self) -> &AppHandle {
+    unsafe {
+      self.rt.app_handle.as_ref().unwrap()
     }
   }
 
@@ -265,5 +164,7 @@ impl State {
         return;
       }
     };
+
+    println!("file: {:?}", reader);
   }
 }

@@ -3,12 +3,13 @@ import { Portal } from "solid-js/web";
 import { IoWarningOutline } from "solid-icons/io";
 // import { VsClose } from "solid-icons/vs";
 import styles from "./settings.module.scss";
+import { invoke } from "@tauri-apps/api";
 
 type Props = {
   open: Accessor<boolean>;
   close: () => void;
-  settings: Accessor<ISettings | null>;
-  setSettings: Setter<ISettings | null>;
+  settings: Accessor<ISettings>;
+  setSettings: Setter<ISettings>;
 }
 
 export default function Settings(props: Props) {
@@ -17,12 +18,6 @@ export default function Settings(props: Props) {
   const [ modal, setModal ] = createSignal(false);
 
   let settingsRef: HTMLDivElement | undefined;
-  let pendingSettings: { [key: string]: string } = {};
-
-  // const canLeave = () => {
-  //   const settings = props.settings();
-  //   return settings && settings.token && settings.channel && settings.guild;
-  // }
 
   createEffect(() => {
     if (props.open()) {
@@ -52,10 +47,6 @@ export default function Settings(props: Props) {
     }
 
     props.close();
-
-    // if (canLeave()) {
-    //   props.close();
-    // }
   }
 
   onMount(() => {
@@ -66,16 +57,22 @@ export default function Settings(props: Props) {
     document.removeEventListener("keydown", onKeyDown);
   });
 
-  function update() {
-    if (tab() === 0 && !modal() && (pendingSettings.channel !== props.settings()!.channel || pendingSettings.guild !== props.settings()!.guild)) {
+  async function submit(data: { [key: string]: string }) {
+    if (!modal() && tab() === 0 && (data.channel !== props.settings()!.channel || data.guild !== props.settings()!.guild)) {
       setModal(true);
       return;
     }
 
+    const diff = Object.entries(data).filter(([ key, value ]) => value !== props.settings()[key as keyof ISettings]);
+    invoke("set_settings", { settings: Object.fromEntries(diff) });
+
     batch(() => {
       setModal(false);
       setDiff(false);
-      props.setSettings({ ...props.settings(), ...pendingSettings as unknown as ISettings });
+      props.setSettings({
+        ...props.settings(),
+        ...data as unknown as ISettings
+      });
     });
   }
 
@@ -114,7 +111,7 @@ export default function Settings(props: Props) {
       <div class={styles.content}>
         <Switch>
           <Match when={tab() === 0}>
-            <DiscordTab settings={props.settings} setDiff={setDiff} onUpdate={settings => pendingSettings = settings} />
+            <DiscordTab settings={props.settings} setDiff={setDiff} onSubmit={settings => submit(settings)} />
           </Match>
         </Switch>
         <div
@@ -137,7 +134,7 @@ export default function Settings(props: Props) {
           </button>
           <button
             class={styles.save}
-            onClick={update}
+            onClick={() => document.dispatchEvent(new Event("submit"))}
           >
             Save Changes
           </button>
@@ -153,10 +150,6 @@ export default function Settings(props: Props) {
             }
 
             props.close();
-
-            // if (canLeave()) {
-            //   props.close();
-            // }
           }}>
             +
           </div>
@@ -179,7 +172,8 @@ export default function Settings(props: Props) {
               <button class={styles.cancel} onClick={() => setModal(false)}>
                 Cancel
               </button>
-              <button class={styles.confirm} onClick={update}>
+              <button class={styles.confirm} onClick={() => document.dispatchEvent(new Event("submit"))}>
+              {/* <button class={styles.confirm} onClick={() => setModal(false)}> */}
                 Continue
               </button>
             </div>
@@ -191,42 +185,46 @@ export default function Settings(props: Props) {
 }
 
 type TabProps = {
-  settings: Accessor<ISettings | null>;
+  settings: Accessor<ISettings>;
   setDiff: (diff: boolean) => void;
-  onUpdate: (data: { [key: string]: string }) => void;
+  onSubmit: (data: { [key: string]: string }) => void;
 };
 
-function DiscordTab({ settings, setDiff, onUpdate }: TabProps) {
-  const [ token, setToken ] = createSignal(settings()!.token);
-  const [ channel, setChannel ] = createSignal(settings()!.channel);
-  const [ guild, setGuild ] = createSignal(settings()!.guild);
+function DiscordTab({ settings, setDiff, onSubmit }: TabProps) {
+  const [ token, setToken ] = createSignal(settings().token);
+  const [ channel, setChannel ] = createSignal(settings().channel);
+  const [ guild, setGuild ] = createSignal(settings().guild);
 
-  createEffect(() => {
-    onUpdate({
-      token: token(),
-      channel: channel(),
-      guild: guild(),
-    });
-
+  createEffect(() => {    
     setDiff(
-      token() !== settings()!.token ||
-      channel() !== settings()!.channel ||
-      guild() !== settings()!.guild
+      token() !== settings().token ||
+      channel() !== settings().channel ||
+      guild() !== settings().guild
     );
   });
 
   const reset = () => {
-    setToken(settings()!.token);
-    setChannel(settings()!.channel);
-    setGuild(settings()!.guild);
+    setToken(settings().token);
+    setChannel(settings().channel);
+    setGuild(settings().guild);
   };
+
+  const submit = () => {
+    onSubmit({
+      token: token(),
+      channel: channel(),
+      guild: guild(),
+    });
+  }
   
   onMount(() => {
     document.addEventListener("reset", reset);
+    document.addEventListener("submit", submit);
   });
 
   onCleanup(() => {
     document.removeEventListener("reset", reset);
+    document.removeEventListener("submit", submit);
   });
 
   return (

@@ -1,4 +1,5 @@
-import { batch, createSignal, onMount } from "solid-js";
+import { Accessor, batch, createSignal, onCleanup, onMount, Setter, Show } from "solid-js";
+import { listen, UnlistenFn } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api";
 
 import Header from "./components/header";
@@ -13,18 +14,24 @@ export default function App() {
   const [ selected, setSelected ] = createSignal<number[]>([]);
   const [ query, setQuery ] = createSignal<string>("");
 
+  let unlistenEraseData: UnlistenFn | null = null;
+
   onMount(async () => {
-    const files = await invoke<IFile[]>("get_files");
-    const settings = await invoke<ISettings>("get_settings");
+    unlistenEraseData = await listen("erase", async () => {
+      console.log("Data erased");
+    });
+    
+    const files = JSON.parse(await invoke<string>("get_files"));
+    const settings = JSON.parse(await invoke<string>("get_settings"));
     
     batch(() => {
       setFiles(files);
       setSettings(settings);
-    
-      // if (!settings.token || !settings.channel || !settings.guild) {
-      //   setSettingsOpen(true);
-      // }  
     });
+  });
+
+  onCleanup(() => {
+    unlistenEraseData?.();
   });
 
   function downloadSelected() {}
@@ -50,12 +57,14 @@ export default function App() {
         files={files}
       />
       <Footer />
-      <Settings
-        open={settingsOpen}
-        close={() => setSettingsOpen(false)}
-        settings={settings}
-        setSettings={setSettings}
-      />
+      <Show when={settings() !== null}>
+        <Settings
+          open={settingsOpen}
+          close={() => setSettingsOpen(false)}
+          settings={settings as Accessor<ISettings>}
+          setSettings={setSettings as Setter<ISettings>}
+        />
+      </Show>
     </div>
   )
 }

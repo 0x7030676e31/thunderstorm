@@ -31,10 +31,10 @@ async fn main() {
   let state2 = state.clone();
   tauri::Builder::default()
     .setup(|app| {
-      let handle = app.handle();
+      let handle = Arc::new(app.handle());
       tokio::spawn(async move {
         let mut app_state = state2.write().await;
-        app_state.rt.app_handle = &handle;
+        app_state.rt.app_handle = Arc::into_raw(handle) as *const _;
       });
 
       Ok(())
@@ -44,6 +44,7 @@ async fn main() {
       invokes::get_files,
       invokes::get_settings,
       invokes::upload_files,
+      invokes::set_settings,
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

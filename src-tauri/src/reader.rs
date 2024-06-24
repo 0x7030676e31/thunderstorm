@@ -33,7 +33,7 @@ unsafe impl Send for Reader {}
 unsafe impl Sync for Reader {}
 
 impl Reader {
-  pub fn new<T: AsRef<str>>(path: T, key: [u8; 64]) -> Option<Self> {
+  pub fn new<T: AsRef<str>>(path: T, key: [u8; 32]) -> Option<Self> {
     let file = match File::open(path.as_ref()) {
       Ok(file) => file,
       Err(_) => return None,

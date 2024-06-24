@@ -1,7 +1,7 @@
 use crate::AppState;
 
-use tauri::State;
-use serde::Serialize;
+use tauri::{Manager, State};
+use serde::{Deserialize, Serialize};
 
 #[tauri::command]
 pub async fn get_files(state: State<'_, AppState>) -> Result<String, ()> {
@@ -33,5 +33,41 @@ pub async fn upload_files(state: State<'_, AppState>, files: Vec<String>) -> Res
   let mut state = state.write().await;
   log::debug!("Adding files: {:?}", files);
   state.extend_queue(files);
+  Ok(())
+}
+
+#[derive(Deserialize)]
+pub struct PartialSettings {
+  token: Option<String>,
+  channel: Option<String>,
+  guild: Option<String>,
+}
+
+#[tauri::command]
+pub async fn set_settings(state: State<'_, AppState>, settings: PartialSettings) -> Result<(), ()> {
+  let mut state = state.write().await;
+  let mut earse_data = false;
+
+  if let Some(token) = settings.token {
+    state.token = token;
+  }
+  
+  if let Some(channel) = settings.channel {
+    state.channel_id = channel;
+    earse_data = true;
+  }
+
+  if let Some(guild) = settings.guild {
+    state.guild_id = guild;
+    earse_data = true;
+  }
+
+  if earse_data {
+    let handle = state.get_app_handle();
+    handle.emit_all("erase", "").expect("failed to emit eraseData");
+    state.files.clear();
+  }
+
+  state.write();
   Ok(())
 }
