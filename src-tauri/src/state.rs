@@ -1,5 +1,7 @@
+use crate::reader::Reader;
 use crate::AppState;
 
+use std::collections::VecDeque;
 use std::path::Path;
 use std::sync::OnceLock;
 use std::{env, fmt, fs, ptr};
@@ -27,22 +29,37 @@ fn path() -> &'static str {
   })
 }
 
+#[derive(Debug)]
+pub struct RtState {
+  pub this: *const AppState,
+  pub app_handle: *const AppHandle,
+  pub queue: VecDeque<String>,
+  pub is_uploading: bool,
+}
+
+impl Default for RtState {
+  fn default() -> Self {
+    Self {
+      this: ptr::null(),
+      app_handle: ptr::null(),
+      queue: VecDeque::new(),
+      is_uploading: false,
+    }
+  }
+}
+
 #[derive(Debug, Serialize)]
 pub struct State {
   pub next_id: u32,
-  pub channel_id: Option<String>,
-  pub guild_id: Option<String>,
-  pub token: Option<String>,
+  pub channel_id: String,
+  pub guild_id: String,
+  pub token: String,
   pub files: Vec<File>,
   
   #[serde(with = "serde_bytes")]
   pub encryption_key: [u8; 64],
   #[serde(skip)]
-  pub this: *const AppState,
-  #[serde(skip)]
-  pub app_handle: *const AppHandle,
-  #[serde(skip)]
-  pub queue: Vec<String>,
+  pub rt: RtState,
 }
 
 unsafe impl Send for State {}
@@ -139,9 +156,7 @@ impl<'de> Deserialize<'de> for State {
           token,
           files,
           encryption_key,
-          this: ptr::null(),
-          app_handle: ptr::null(),
-          queue: Vec::new(),
+          rt: RtState::default(),
         })
       }
     }
@@ -158,14 +173,12 @@ impl Default for State {
 
     Self {
       next_id: 1,
-      channel_id: None,
-      guild_id: None,
-      token: None,
+      channel_id: String::new(),
+      guild_id: String::new(),
+      token: String::new(),
       files: Vec::new(),
       encryption_key: key,
-      this: ptr::null(),
-      app_handle: ptr::null(),
-      queue: Vec::new(),
+      rt: RtState::default(),
     }
   }
 }
@@ -226,6 +239,31 @@ impl State {
   }
 
   pub fn extend_queue(&mut self, files: Vec<String>) {
-    self.queue.extend(files);
+    self.rt.queue.extend(files);
+    if !self.rt.is_uploading {
+      self.upload();
+    }
+  }
+
+  fn upload(&mut self) {
+    let file = match self.rt.queue.pop_front() {
+      Some(file) => file,
+      None => {
+        self.rt.is_uploading = false;
+        return;
+      }
+    };
+
+    log::debug!("Uploading file: {}", file);
+    self.rt.is_uploading = true;
+
+    let mut reader = match Reader::new(&file, self.encryption_key) {
+      Some(reader) => reader,
+      None => {
+        log::error!("failed to open file: {}", file);
+        self.upload();
+        return;
+      }
+    };
   }
 }

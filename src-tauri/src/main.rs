@@ -8,6 +8,7 @@ use tokio::sync::RwLock;
 mod invokes;
 mod state;
 mod reader;
+mod api;
 
 type AppState = Arc<RwLock<state::State>>;
 
@@ -23,10 +24,9 @@ async fn main() {
   let state = state::State::new();
   let state = Arc::new(RwLock::new(state));
 
-  {
-    let mut app_state = state.write().await;
-    app_state.this = &state;
-  }
+  let mut app_state = state.write().await;
+  app_state.rt.this = &state;
+  drop(app_state);
 
   let state2 = state.clone();
   tauri::Builder::default()
@@ -34,7 +34,7 @@ async fn main() {
       let handle = app.handle();
       tokio::spawn(async move {
         let mut app_state = state2.write().await;
-        app_state.app_handle = &handle;
+        app_state.rt.app_handle = &handle;
       });
 
       Ok(())
@@ -42,6 +42,7 @@ async fn main() {
     .manage(state)
     .invoke_handler(tauri::generate_handler![
       invokes::get_files,
+      invokes::get_settings,
       invokes::upload_files,
     ])
     .run(tauri::generate_context!())

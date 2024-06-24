@@ -9,4 +9,10 @@ declare global {
     size: number,
     created: number,
   }
+
+  interface ISettings {
+    token: string,
+    channel: string,
+    guild: string,
+  }
 }

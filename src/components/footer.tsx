@@ -4,7 +4,12 @@ import styles from "./footer.module.scss";
 
 export default function Footer() {
   return (
-    <div class={styles.footer}>
+    <div
+      class={styles.footer}
+      classList={{
+        [styles.expanded]: false,
+      }}
+    >
       <div class={styles.left}>
         <div class={styles.text}>
           Uploading files...

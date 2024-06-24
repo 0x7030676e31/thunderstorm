@@ -1,4 +1,4 @@
-import { createSignal, onMount } from "solid-js";
+import { batch, createSignal, onMount } from "solid-js";
 import { invoke } from "@tauri-apps/api";
 
 import Header from "./components/header";
@@ -7,28 +7,24 @@ import Footer from "./components/footer";
 import Settings from "./components/settings";
 
 export default function App() {
-  const [ settings, setSettings ] = createSignal(false);
+  const [ settingsOpen, setSettingsOpen ] = createSignal(false);
+  const [ settings, setSettings ] = createSignal<ISettings | null>(null);
   const [ files, setFiles ] = createSignal<IFile[]>([]);
   const [ selected, setSelected ] = createSignal<number[]>([]);
   const [ query, setQuery ] = createSignal<string>("");
 
   onMount(async () => {
     const files = await invoke<IFile[]>("get_files");
-    files.push({
-      id: 0,
-      name: "example.txt",
-      size: 1024,
-      created: Date.now(),
+    const settings = await invoke<ISettings>("get_settings");
+    
+    batch(() => {
+      setFiles(files);
+      setSettings(settings);
+    
+      // if (!settings.token || !settings.channel || !settings.guild) {
+      //   setSettingsOpen(true);
+      // }  
     });
-
-    files.push({
-      id: 1,
-      name: "example2.txt",
-      size: 2048,
-      created: Date.now(),
-    });
-
-    setFiles(files);
   });
 
   function downloadSelected() {}
@@ -40,7 +36,7 @@ export default function App() {
   return (
     <div class="app">
       <Header
-        openSettings={() => setSettings(true)}
+        openSettings={() => setSettingsOpen(true)}
         query={query}
         setQuery={setQuery}
         selected={selected}
@@ -55,8 +51,10 @@ export default function App() {
       />
       <Footer />
       <Settings
-        open={settings}
-        close={() => setSettings(false)}
+        open={settingsOpen}
+        close={() => setSettingsOpen(false)}
+        settings={settings}
+        setSettings={setSettings}
       />
     </div>
   )
