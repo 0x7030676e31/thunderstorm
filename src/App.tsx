@@ -18,7 +18,11 @@ export default function App() {
 
   onMount(async () => {
     unlistenEraseData = await listen("erase", async () => {
-      console.log("Data erased");
+      batch(() => {
+        setFiles([]);
+        setSelected([]);
+        setQuery("");
+      });
     });
     
     const files = JSON.parse(await invoke<string>("get_files"));

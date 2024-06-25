@@ -6,6 +6,7 @@ use std::cmp;
 
 use aes_gcm::aead::AeadMutInPlace;
 use aes_gcm::{Aes256Gcm, Key, KeyInit, Nonce};
+use tokio::sync::mpsc;
 
 pub const SLICE_SIZE: u64 = 1024 * 1024 * 25;
 pub const BUFFER_SIZE: u64 = 1024 * 1024 * 2;
@@ -23,17 +24,18 @@ pub struct Reader {
   file: Arc<Mutex<File>>,
   cipher: Arc<UnsafeCell<Aes256Gcm>>,
   slices: usize,
-  clusters: usize,
+  pub clusters: usize,
   cluster: usize,
-  file_size: u64,
+  pub file_size: u64,
   final_size: u64,
+  sender: mpsc::Sender<usize>,
 }
 
 unsafe impl Send for Reader {}
 unsafe impl Sync for Reader {}
 
 impl Reader {
-  pub fn new<T: AsRef<str>>(path: T, key: [u8; 32]) -> Option<Self> {
+  pub fn new<T: AsRef<str>>(path: T, key: [u8; 32], sender: mpsc::Sender<usize>) -> Option<Self> {
     let file = match File::open(path.as_ref()) {
       Ok(file) => file,
       Err(_) => return None,
@@ -63,6 +65,7 @@ impl Reader {
       cluster: 0,
       file_size: size,
       final_size: encrypted_size,
+      sender,
     })
   }
 
@@ -81,6 +84,8 @@ impl Reader {
       slices,
       slice: 0,
       index: self.cluster as u64 - 1,
+      final_size: self.final_size,
+      sender: self.sender.clone(),
     })
   }
 }
@@ -92,20 +97,25 @@ pub struct Cluster {
   file_size: u64,
   slices: usize,
   slice: usize,
-  index: u64, // index of the current cluster
+  pub index: u64, // index of the current cluster
+  final_size: u64,
+  sender: mpsc::Sender<usize>,
 }
 
 unsafe impl Send for Cluster {}
 unsafe impl Sync for Cluster {}
 
 impl Cluster {
+  pub fn get_size(&self) -> u64 {
+    cmp::min(CLUSTER_SIZE, self.final_size - self.index * CLUSTER_SIZE)
+  }
+
   pub fn next_slice(&mut self) -> Option<Slice> {
     if self.slice == self.slices {
       return None;
     }
 
     let this_slice = self.index * CLUSTER_CAP + self.slice as u64;
-    println!("Uploading slice: #{}", this_slice + 1);
 
     self.slice += 1;
     Some(Slice {
@@ -116,6 +126,7 @@ impl Cluster {
       slice: this_slice,
       index: 0,
       nonce: [0; 12],
+      sender: self.sender.clone(),
     })
   }
 }
@@ -128,6 +139,7 @@ pub struct Slice {
   slice: u64, // index of this slice
   index: u64, // index of the current buffer
   nonce: [u8; 12],
+  sender: mpsc::Sender<usize>,
 }
 
 unsafe impl Send for Slice {}
@@ -156,7 +168,14 @@ impl Iterator for Slice {
     file.read(&mut buffer).expect("Failed to read file");
 
     drop(file);
-
+    let size = buffer.len();
+    let sender = self.sender.clone();
+    tokio::spawn(async move {
+      if let Err(err) = sender.send(size).await {
+        log::error!("Failed to send buffer size: {:?}", err);
+      }
+    });
+    
     self.nonce[4..].copy_from_slice(&(self.slice * BUFFERS_PER_SLICE + self.index).to_be_bytes());
     let nonce = Nonce::from(self.nonce);
 

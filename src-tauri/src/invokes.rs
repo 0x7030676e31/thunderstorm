@@ -63,7 +63,7 @@ pub async fn set_settings(state: State<'_, AppState>, settings: PartialSettings)
   }
 
   if earse_data {
-    let handle = state.get_app_handle();
+    let handle = unsafe { state.rt.app_handle.as_ref().unwrap() };
     handle.emit_all("erase", "").expect("failed to emit eraseData");
     state.files.clear();
   }

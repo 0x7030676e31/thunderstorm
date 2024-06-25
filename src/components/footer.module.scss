@@ -8,8 +8,8 @@
   display: flex;
   max-height: 0;
   overflow: hidden;
-  gap: 24px;
-  transition: max-height 0.3s ease, padding 0.3s ease, border-top-width 0.3s ease;
+  gap: 16px;
+  transition: max-height 0.2s ease, padding 0.2s ease, border-top-width 0.2s ease;
 
   .left {
     flex: 1;
@@ -21,11 +21,10 @@
   .right {
     display: flex;
     align-items: center;
-    gap: 8px;
-  }
+  } 
 
   &.expanded {
-    max-height: 100%;
+    max-height: 72px;
     padding: 12px 16px;
     border-top-width: 1px;
   }
@@ -39,11 +38,42 @@
   }
 
   .subtext {
-    text-align: center;
-    color: $subtext0;
-    font-size: 12px;
-    line-height: 14px;
     margin-bottom: 4px;
+    gap: 8px;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    // tra
+
+    p {
+      color: $subtext0;
+      font-size: 12px;
+      line-height: 14px;
+      margin: 0;
+    }
+
+    p:first-child {
+      text-align: right;
+    }
+
+    p:last-child {
+      text-align: left;
+    }
+
+    &.single {
+      grid-template-columns: 1fr 0 0;
+
+      .separator {
+        display: none;
+      }
+
+      p:first-child {
+        text-align: center;
+      }
+
+      p:last-child {
+        display: none;
+      }
+    }
   }
 
   .progress {
@@ -58,6 +88,12 @@
       border-radius: 2137px;
     }
   }
+}
+
+.separator {
+  width: 1px;
+  height: 100%;
+  background-color: $overlay0;
 }
 
 .cancel {
