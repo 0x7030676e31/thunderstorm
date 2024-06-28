@@ -45,6 +45,7 @@ async fn main() {
       invokes::get_settings,
       invokes::upload_files,
       invokes::set_settings,
+      invokes::cancel,
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

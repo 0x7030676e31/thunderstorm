@@ -64,10 +64,20 @@ pub async fn set_settings(state: State<'_, AppState>, settings: PartialSettings)
 
   if earse_data {
     let handle = unsafe { state.rt.app_handle.as_ref().unwrap() };
-    handle.emit_all("erase", "").expect("failed to emit eraseData");
+    handle.emit_all("erase", ()).expect("failed to emit eraseData");
+    
+    log::info!("Changed sensitive settings, erasing data");
     state.files.clear();
   }
 
   state.write();
+  Ok(())
+}
+
+#[tauri::command]
+pub async fn cancel(state: State<'_, AppState>) -> Result<(), ()> {
+  let mut state = state.write().await;
+  log::debug!("Cancelling current action");
+  state.cancel().await;
   Ok(())
 }

@@ -14,20 +14,25 @@ export default function App() {
   const [ selected, setSelected ] = createSignal<number[]>([]);
   const [ query, setQuery ] = createSignal<string>("");
 
-  let unlistenEraseData: UnlistenFn | null = null;
+  let unlistenErase: UnlistenFn | null = null;
+  let unlistenUploaded: UnlistenFn | null = null;
 
   onMount(async () => {
-    unlistenEraseData = await listen("erase", async () => {
+    unlistenErase = await listen("erase", async () => {
       batch(() => {
         setFiles([]);
         setSelected([]);
         setQuery("");
       });
     });
+
+    unlistenUploaded = await listen<IFile>("uploaded", async data => {
+      setFiles(files => [ data.payload, ...files ]);
+    });
     
     const files = JSON.parse(await invoke<string>("get_files"));
     const settings = JSON.parse(await invoke<string>("get_settings"));
-    
+
     batch(() => {
       setFiles(files);
       setSettings(settings);
@@ -35,7 +40,8 @@ export default function App() {
   });
 
   onCleanup(() => {
-    unlistenEraseData?.();
+    unlistenErase?.();
+    unlistenUploaded?.();
   });
 
   function downloadSelected() {}

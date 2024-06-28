@@ -1,18 +1,8 @@
 import { batch, createSignal, onCleanup, onMount } from "solid-js";
 import { UnlistenFn, listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api";
+import { unit } from "../utils";
 import styles from "./footer.module.scss";
-
-function unit(size: number) {
-  const units = ["B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB"];
-  let unit = 0;
-
-  while (size >= 1024) {
-    size /= 1024;
-    unit++;
-  }
-
-  return `${size.toFixed(2)} ${units[unit]}`;
-}
 
 export default function Footer() {
   const [ queued, setQueued ] = createSignal<Array<{ name: string, size: number }>>([]);
@@ -29,6 +19,7 @@ export default function Footer() {
   let unlistenQueue: UnlistenFn | null = null;
   let unlistenProgress: UnlistenFn | null = null;
   let unlistenUploaded: UnlistenFn | null = null;
+  let unlistenCancel: UnlistenFn | null = null;
 
   onMount(async () => {
     unlistenQueue = await listen<Array<[string, number]>>("queue", data => {
@@ -62,12 +53,17 @@ export default function Footer() {
         setCurrent({ index: (current()?.index || 0) + 1, progress: 0 });
       });
     });
+
+    unlistenCancel = await listen("cancel", () => {
+      setFinished(true);
+    });
   });
 
   onCleanup(() => {
     unlistenQueue?.();
     unlistenProgress?.();
     unlistenUploaded?.();
+    unlistenCancel?.();
   });
 
   return (
@@ -93,7 +89,7 @@ export default function Footer() {
         </div>
       </div>
       <div class={styles.right}>
-        <div class={styles.cancel}>
+        <div class={styles.cancel} onClick={() => invoke("cancel")}>
           Cancel
         </div>
       </div>

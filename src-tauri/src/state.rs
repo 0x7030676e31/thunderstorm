@@ -4,6 +4,7 @@ use crate::{AppState, api};
 use std::collections::VecDeque;
 use std::path::Path;
 use std::sync::OnceLock;
+use std::time::Instant;
 use std::{env, fs, ptr};
 use std::sync::Arc;
 
@@ -12,6 +13,7 @@ use tauri::{AppHandle, Manager};
 use serde::{Serialize, Deserialize};
 use tokio::sync::{mpsc, oneshot};
 use futures::{future, stream, StreamExt};
+use tokio::select;
 
 fn path() -> &'static str {
   static PATH: OnceLock<String> = OnceLock::new();
@@ -31,6 +33,7 @@ pub struct RtState {
   pub app_handle: *const AppHandle,
   pub queue: VecDeque<String>,
   pub is_uploading: bool,
+  pub cancel_handle: Option<mpsc::Sender<()>>,
 }
 
 impl Default for RtState {
@@ -40,6 +43,7 @@ impl Default for RtState {
       app_handle: ptr::null(),
       queue: VecDeque::new(),
       is_uploading: false,
+      cancel_handle: None,
     }
   }
 }
@@ -94,11 +98,13 @@ impl State {
   pub fn new() -> Self {
     let app_data = path();
     if !Path::new(app_data).exists() {
+      log::info!("App data directory not found, creating");
       fs::create_dir_all(app_data).expect("failed to create app data directory");
     }
 
     let state_file = format!("{}/state.bin", app_data);
     if !Path::new(&state_file).exists() {
+      log::info!("State file not found, launching with default state");
       return Self::default();
     }
 
@@ -111,7 +117,10 @@ impl State {
     };
 
     match bincode::deserialize(&file) {
-      Ok(state) => state,
+      Ok(state) => {
+        log::info!("State file loaded, initializing...");
+        state
+      },
       Err(e) => {
         log::error!("failed to deserialize state file, launching with default state: {}", e);
         Self::default()
@@ -129,29 +138,45 @@ impl State {
       }
     };
 
-    if let Err(e) = fs::write(&state_file, state) {
-      log::error!("failed to write state file: {}", e);
+    match fs::write(&state_file, &state) {
+      Ok(_) => log::debug!("State file written: {} bytes", state.len()),
+      Err(err) => log::error!("failed to write state file: {}", err),
     }
   }
 
   pub fn next_id(&mut self) -> u32 {
     let id = self.next_id;
+    log::debug!("Next ID: {}", id);
+    
     self.next_id += 1;
     id
   }
 
-  pub fn extend_queue(&mut self, files: Vec<String>) {
+  pub fn extend_queue(&mut self, mut files: Vec<String>) {
     let mut queue = Vec::with_capacity(files.len());
-    for file in files.iter() {
-      let size = fs::metadata(&file).expect("failed to get file metadata").len();
-      queue.push((file, size));
+    files.retain(|file| {
+      let meta = fs::metadata(&file).expect("failed to get file metadata");
+      if meta.is_file() {
+        queue.push((file.clone(), meta.len()));
+        return true;
+      }
+
+      false
+    });
+
+    if files.is_empty() {
+      log::warn!("No files to upload");
+      return;
     }
 
     let handle = unsafe { self.rt.app_handle.as_ref().unwrap() };
     handle.emit_all("queue", queue).expect("failed to emit addFiles");
     
+    log::info!("Extending the queue with {} files", files.len());
     self.rt.queue.extend(files);
+    
     if !self.rt.is_uploading {
+      log::info!("Starting uploading {} files", self.rt.queue.len());
       self.upload();
     }
   }
@@ -160,13 +185,18 @@ impl State {
     let file = match self.rt.queue.pop_front() {
       Some(file) => file,
       None => {
+        log::info!("No more files to upload, stopping");
+
         self.rt.is_uploading = false;
+        self.rt.cancel_handle = None;
         return;
       }
     };
 
-    log::debug!("Uploading file: {}", file);
+    log::info!("Uploading file: {}", file);
+    let (cancel_tx, mut cancel_rx) = mpsc::channel::<()>(1);
     self.rt.is_uploading = true;
+    self.rt.cancel_handle = Some(cancel_tx);
 
     let (tx, mut rx) = mpsc::channel::<usize>(10);
     let handle = unsafe { self.rt.app_handle.as_ref().unwrap() };
@@ -243,24 +273,37 @@ impl State {
       while let Some(cluster) = reader.next_cluster() {
         let details = api::preupload(&token, &channel, cluster.get_size()).await;
         let sender = senders.pop().unwrap();
-        sender.send((details, cluster, tx.clone())).expect("failed to send upload details");
+        
+        // When the receiver is dropped, uploading was canceled
+        if let Err(_) = sender.send((details, cluster, tx.clone())) {
+          break;
+        }
       }
     });
 
     let state = unsafe { &*self.rt.this };
     tokio::spawn(async move {
-      let (ids, _, _) = future::join3(futures, uploaders, preuploads).await;
-      let ids = ids.expect("failed to get message IDs");
+      let now = Instant::now();
+      
+      let futures = future::join3(futures, uploaders, preuploads);
+      let ids = select! {
+        (ids, _, _) = futures => ids,
+        _ = cancel_rx.recv() => {
+          log::debug!("Upload canceled");
+          return;
+        }
+      };
 
+      let took = now.elapsed().as_secs_f64();
+      log::info!("Uploaded {} clusters in {:.2}s", clusters, took);
+
+      let ids = ids.expect("failed to get message IDs");
       let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .expect("failed to get timestamp")
         .as_secs();
-
+      
       let mut state = state.write().await;
-      let handle = unsafe { state.rt.app_handle.as_ref().unwrap() };
-      handle.emit_all("uploaded", ()).expect("failed to emit upload");
-
       let file = File {
         id: state.next_id(),
         name: file,
@@ -271,10 +314,29 @@ impl State {
         crc32: 0,
       };
 
+      let handle = unsafe { state.rt.app_handle.as_ref().unwrap() };
+      handle.emit_all("uploaded", &file).expect("failed to emit upload");
+
       state.files.push(file);
       
       state.write();
       state.upload();
     });
+  }
+
+  pub async fn cancel(&mut self) {
+    if let Some(handle) = self.rt.cancel_handle.take() {
+      self.rt.is_uploading = false;
+      self.rt.queue.clear();
+
+      if let Err(err) = handle.send(()).await {
+        log::error!("failed to send cancel signal: {}", err);
+      }
+
+      let handle = unsafe { self.rt.app_handle.as_ref().unwrap() };
+      if let Err(err) = handle.emit_all("cancel", ()) {
+        log::error!("failed to emit cancel signal: {}", err);
+      }
+    }
   }
 }

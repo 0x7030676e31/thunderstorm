@@ -7,7 +7,7 @@ declare global {
     id: number,
     name: string,
     size: number,
-    created: number,
+    created_at: number,
   }
 
   interface ISettings {
