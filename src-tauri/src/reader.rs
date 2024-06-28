@@ -9,7 +9,7 @@ use aes_gcm::{Aes256Gcm, Key, KeyInit, Nonce};
 use tokio::sync::mpsc;
 
 pub const SLICE_SIZE: u64 = 1024 * 1024 * 25;
-pub const BUFFER_SIZE: u64 = 1024 * 1024 * 2;
+pub const BUFFER_SIZE: u64 = 1024 * 1024;
 pub const CLUSTER_CAP: u64 = 10;
 pub const AES_OVERHEAD: u64 = 16;
 pub const THREADS: usize = 4;
