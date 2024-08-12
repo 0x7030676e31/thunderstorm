@@ -20,6 +20,7 @@ export default function Footer() {
   let unlistenProgress: UnlistenFn | null = null;
   let unlistenUploaded: UnlistenFn | null = null;
   let unlistenCancel: UnlistenFn | null = null;
+  let unlistenUploadError: UnlistenFn | null = null;
 
   onMount(async () => {
     unlistenQueue = await listen<Array<[string, number]>>("queue", data => {
@@ -55,6 +56,10 @@ export default function Footer() {
     });
 
     unlistenCancel = await listen("cancel", () => {
+      setFinished(true);
+    });
+
+    unlistenUploadError = await listen("upload_error", () => {
       setFinished(true);
     });
   });

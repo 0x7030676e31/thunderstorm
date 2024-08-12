@@ -1,0 +1,116 @@
+@import "../palette.scss";
+
+.container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: transparent;
+  z-index: 500;
+  pointer-events: none;
+  transition: background-color 0.3s;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+
+  &.open {
+    background-color: rgba(0, 0 , 0, 0.5);
+    pointer-events: auto;
+  
+    .modal {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .modal {
+    background-color: $base;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+    border-radius: 8px;
+    width: min(100%, 30rem);
+    opacity: 0;
+    transform: translateY(-1rem);
+    transition: all ease-in-out 0.3s;
+    box-sizing: border-box;
+
+    .header {
+      margin: 1.5rem 1.5rem 1rem 1.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding-bottom: 8px;
+      border-bottom: 2px solid $surface0;
+  
+      svg {
+        color: $text;
+        font-size: 1.7rem;
+      }
+  
+      h1 {
+        margin: 0;
+        color: $text;
+        font-size: 1.5rem;
+        font-weight: 600;
+      }
+    }
+
+    .body {
+      margin: 0 1.5rem 1rem 1.5rem;
+      width: calc(100% - 3rem);
+      box-sizing: border-box;
+
+      h2 {
+        color: $text;
+        font-size: 1.2rem;
+        margin: 0;
+      }
+      
+      p {
+        margin: 4px 0 0 0;
+        width: 100%;
+        color: $text;
+      }
+    }
+  }
+
+  .actions {
+    padding: 1rem;
+    background-color: $mantle;
+    display: flex;
+    justify-content: flex-end;
+    gap: 1rem;
+    align-items: center;
+  
+    button {
+      background-color: transparent;
+      outline: none;
+      border: none;
+      color: $text;
+      padding: 0.5rem 1rem;
+      font-size: 0.85rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.1s ease;
+  
+      &.cancel {
+        &:hover {
+          text-decoration: underline;
+        }
+      }
+  
+      &.confirm {
+        background-color: $mauve;
+        border-radius: 4px;
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: $crust;
+  
+        &:hover {
+          background-color: darken($mauve, 10%);
+          color: $mantle;
+        }
+      }
+    }
+  }
+}

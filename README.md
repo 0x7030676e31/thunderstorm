@@ -15,11 +15,34 @@ Thunderstorm is an innovative cloud storage solution that leverages Discord as i
 
 ### Installation
 
-Download and install Thunderstorm for your operating system:
+Download and install Thunderstorm for your operating system (todo):
 
 - [Windows Installer (MSI)](https://youtu.be/1dYoPg3UkwM)
 - [Mac Installer (DMG)](https://youtu.be/1dYoPg3UkwM)
 - [Linux Installer (DEB/RPM)](https://youtu.be/1dYoPg3UkwM)
+
+### Build from Source
+
+If you prefer to build Thunderstorm from source, follow these steps:
+
+1. **Clone the Repository**:
+
+    ```sh
+    git clone https://github.com/yourusername/thunderstorm.git
+    cd thunderstorm
+    ```
+
+2. **Install Dependencies**:
+
+    ```sh
+    bun install
+    ```
+
+3. **Build the Project**:
+
+    ```sh
+    bun run tauri build
+    ```
 
 ## Usage
 

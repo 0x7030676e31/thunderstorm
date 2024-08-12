@@ -1,13 +1,13 @@
-import { Accessor, For, Setter, createSignal, onCleanup, onMount } from "solid-js";
+import { For, Show, createSignal, onCleanup, onMount } from "solid-js";
 import { UnlistenFn, listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api";
 import { unit } from "../utils";
 import styles from "./content.module.scss";
 
 type Props = {
-  setSelected: Setter<number[]>;
-  selected: Accessor<number[]>;
-  files: Accessor<IFile[]>;
+  setSelected: any // todo;
+  selected: number[];
+  files: IFile[];
 }
 
 const fmt = new Intl.DateTimeFormat(undefined, {
@@ -53,7 +53,7 @@ export default function Content(props: Props) {
   return (
     <div class={styles.content}>
       <div class={styles.files}>
-        <For each={props.files()} fallback={<Fallback />}>
+        <For each={props.files}>
           {file => (
             <div class={styles.file}>
               <div>
@@ -70,6 +70,9 @@ export default function Content(props: Props) {
         </For>
       </div>
       <div class={styles.overlay} classList={{ [styles.hovering]: hovering() }} />
+      <Show when={props.files.length === 0}>
+        <Fallback />
+      </Show>
     </div>
   );
 }

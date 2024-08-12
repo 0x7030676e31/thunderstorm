@@ -8,15 +8,14 @@ import {
 
 import { open } from "@tauri-apps/api/dialog";
 import { invoke } from "@tauri-apps/api";
-import { Accessor, Setter } from "solid-js";
 import BoxIcon from "./boxicon";
 import styles from "./header.module.scss";
 
 type Props = {
   openSettings: () => void;
-  query: Accessor<string>;
-  setQuery: Setter<string>;
-  selected: Accessor<number[]>;
+  query: string;
+  setQuery: (query: string) => void;
+  selected: number[];
   download: () => void;
   delete: () => void;
   rename: () => void;
@@ -48,24 +47,24 @@ export default function Header(props: Props) {
         type="text"
         placeholder="Search"
         class={`${styles.search} ${styles.gap}`}
-        value={props.query()}
+        value={props.query}
         onInput={(e) => props.setQuery((e.target as HTMLInputElement).value)}
       />
       <BoxIcon
         onClick={props.download}
-        disabled={props.selected().length === 0}
+        disabled={props.selected.length === 0}
       >
         <AiOutlineCloudDownload />
       </BoxIcon>
       <BoxIcon
         onClick={props.delete}
-        disabled={props.selected().length === 0}
+        disabled={props.selected.length === 0}
       >
         <AiOutlineDelete />
       </BoxIcon>
       <BoxIcon
         onClick={props.rename}
-        disabled={props.selected().length !== 1}
+        disabled={props.selected.length !== 1}
       >
         <AiOutlineEdit />
       </BoxIcon>

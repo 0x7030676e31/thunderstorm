@@ -15,4 +15,10 @@ declare global {
     channel: string,
     guild: string,
   }
+
+  interface IError {
+    source: string,
+    type: string,
+    error: string,
+  }
 }

@@ -1,12 +1,11 @@
 import { Accessor, Match, Setter, Switch, batch, createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import { Portal } from "solid-js/web";
 import { IoWarningOutline } from "solid-icons/io";
-// import { VsClose } from "solid-icons/vs";
 import styles from "./settings.module.scss";
 import { invoke } from "@tauri-apps/api";
 
 type Props = {
-  open: Accessor<boolean>;
+  open: boolean;
   close: () => void;
   settings: Accessor<ISettings>;
   setSettings: Setter<ISettings>;
@@ -20,7 +19,7 @@ export default function Settings(props: Props) {
   let settingsRef: HTMLDivElement | undefined;
 
   createEffect(() => {
-    if (props.open()) {
+    if (props.open) {
       setTab(0);
     }
   });
@@ -32,7 +31,7 @@ export default function Settings(props: Props) {
   }
 
   const onKeyDown = (e: KeyboardEvent) => {
-    if (e.key !== "Escape" || !props.open()) {
+    if (e.key !== "Escape" || !props.open) {
       return;
     }
 
@@ -87,7 +86,7 @@ export default function Settings(props: Props) {
   return (
     <div
       class={styles.settings}
-      classList={{ [styles.open]: props.open() }}
+      classList={{ [styles.open]: props.open }}
       ref={settingsRef}
     >
       <div class={styles.tabs}>
@@ -173,7 +172,6 @@ export default function Settings(props: Props) {
                 Cancel
               </button>
               <button class={styles.confirm} onClick={() => document.dispatchEvent(new Event("submit"))}>
-              {/* <button class={styles.confirm} onClick={() => setModal(false)}> */}
                 Continue
               </button>
             </div>
