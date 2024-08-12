@@ -11,7 +11,7 @@ use serde::Deserialize;
 use tokio::time;
 
 const READ_TIMEOUT: Duration = Duration::from_secs(20);
-const CONNECT_TIMEOUT: Duration = Duration::from_secs(20);
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 
 #[derive(Debug, Deserialize)]
 pub struct UploadDetailsInner {
@@ -88,7 +88,7 @@ pub async fn upload(
     mut cluster: Cluster,
 ) -> Result<(), UploadError> {
     let client = Client::builder()
-        .read_timeout(READ_TIMEOUT)
+        // .read_timeout(READ_TIMEOUT)
         .connect_timeout(CONNECT_TIMEOUT)
         .build()
         .map_err(UploadError::from)?;

@@ -12,9 +12,9 @@ type Props = {
 }
 
 export default function Settings(props: Props) {
-  const [ tab, setTab ] = createSignal(0);
-  const [ diff, setDiff ] = createSignal(false);
-  const [ modal, setModal ] = createSignal(false);
+  const [tab, setTab] = createSignal(0);
+  const [diff, setDiff] = createSignal(false);
+  const [modal, setModal] = createSignal(false);
 
   let settingsRef: HTMLDivElement | undefined;
 
@@ -62,7 +62,7 @@ export default function Settings(props: Props) {
       return;
     }
 
-    const diff = Object.entries(data).filter(([ key, value ]) => value !== props.settings()[key as keyof ISettings]);
+    const diff = Object.entries(data).filter(([key, value]) => value !== props.settings()[key as keyof ISettings]);
     invoke("set_settings", { settings: Object.fromEntries(diff) });
 
     batch(() => {
@@ -113,6 +113,7 @@ export default function Settings(props: Props) {
             <DiscordTab settings={props.settings} setDiff={setDiff} onSubmit={settings => submit(settings)} />
           </Match>
         </Switch>
+
         <div
           class={styles.unsaved}
           classList={{
@@ -189,11 +190,21 @@ type TabProps = {
 };
 
 function DiscordTab({ settings, setDiff, onSubmit }: TabProps) {
-  const [ token, setToken ] = createSignal(settings().token);
-  const [ channel, setChannel ] = createSignal(settings().channel);
-  const [ guild, setGuild ] = createSignal(settings().guild);
+  const [token, setToken] = createSignal(settings().token);
+  const [channel, setChannel] = createSignal(settings().channel);
+  const [guild, setGuild] = createSignal(settings().guild);
 
-  createEffect(() => {    
+  let tokenRef: HTMLInputElement | undefined;
+  let channelRef: HTMLInputElement | undefined;
+  let guildRef: HTMLInputElement | undefined;
+
+  function blink(ref: HTMLInputElement) {
+    ref.classList.remove(styles.blink);
+    void ref.offsetWidth;
+    ref.classList.add(styles.blink);
+  }
+
+  createEffect(() => {
     setDiff(
       token() !== settings().token ||
       channel() !== settings().channel ||
@@ -208,13 +219,34 @@ function DiscordTab({ settings, setDiff, onSubmit }: TabProps) {
   };
 
   const submit = () => {
+    let error = false;
+
+    if (token().trim() === "") {
+      blink(tokenRef!);
+      error = true;
+    }
+
+    if (channel().trim() === "" || !/^\d+$/.test(channel())) {
+      blink(channelRef!);
+      error = true;
+    }
+
+    if (guild().trim() === "" || !/^\d+$/.test(guild())) {
+      blink(guildRef!);
+      error = true;
+    }
+
+    if (error) {
+      return;
+    }
+
     onSubmit({
       token: token(),
       channel: channel(),
       guild: guild(),
     });
   }
-  
+
   onMount(() => {
     document.addEventListener("reset", reset);
     document.addEventListener("submit", submit);
@@ -230,9 +262,16 @@ function DiscordTab({ settings, setDiff, onSubmit }: TabProps) {
       <h1>Discord</h1>
 
       <p class={styles.label}>TOKEN</p>
-      <input type="text" placeholder="Discord token" class={styles.text} value={token()} onInput={(e) => setToken((e.target as HTMLInputElement).value)} />
+      <input
+        type="text"
+        placeholder="Discord token"
+        class={styles.text}
+        value={token()}
+        onInput={(e) => setToken((e.target as HTMLInputElement).value)}
+        ref={tokenRef}
+      />
       <p class={styles.note}>Changing the token field may break the application in some cases. Use with caution.</p>
-    
+
       <div class={styles.inline}>
         <IoWarningOutline />
         <h2>Danger zone</h2>
@@ -241,12 +280,26 @@ function DiscordTab({ settings, setDiff, onSubmit }: TabProps) {
       <p class={styles.sublabel}>Changing these settings will earse all metadata and files associated with the current settings.</p>
 
       <p class={styles.label}>CHANNEL</p>
-      <input type="text" placeholder="Channel ID" class={styles.text} value={channel()} onInput={(e) => setChannel((e.target as HTMLInputElement).value)} />
+      <input
+        type="text"
+        placeholder="Channel ID"
+        class={styles.text}
+        value={channel()}
+        onInput={(e) => setChannel((e.target as HTMLInputElement).value)}
+        ref={channelRef}
+      />
+
       <div class={styles.separator} />
 
       <p class={styles.label}>GUILD</p>
-      <input type="text" placeholder="Guild ID" class={styles.text} value={guild()} onInput={(e) => setGuild((e.target as HTMLInputElement).value)} />
-
+      <input
+        type="text"
+        placeholder="Guild ID"
+        class={styles.text}
+        value={guild()}
+        onInput={(e) => setGuild((e.target as HTMLInputElement).value)}
+        ref={guildRef}
+      />
     </div>
   );
 }

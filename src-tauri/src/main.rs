@@ -45,6 +45,8 @@ async fn main() {
         .manage(state)
         .invoke_handler(tauri::generate_handler![
             invokes::get_files,
+            invokes::download_files,
+            invokes::delete_files,
             invokes::get_settings,
             invokes::upload_files,
             invokes::set_settings,

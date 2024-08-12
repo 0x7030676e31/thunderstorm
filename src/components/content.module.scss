@@ -9,7 +9,7 @@
 
 .files {
   display: grid;
-  grid-template-columns: 1fr auto auto;
+  grid-template-columns: auto 1fr auto auto;
   width: 100%;
   overflow: auto;
 }
@@ -18,20 +18,15 @@
   display: contents;
   cursor: pointer;
 
-  div {
-    display: flex;
-    align-items: center;
+  & > div {
     padding: 1rem 0.5rem;
     font-size: 1rem;
     color: $subtext0;
     height: fit-content;
+    transition: all 0.15s cubic-bezier(0, 1, 1, 0.95);
   }
 
-  div:first-child {
-    padding-left: 1rem;
-  }
-
-  div:last-child {
+  & > div:last-child {
     padding-right: 1rem;
   }
 
@@ -42,6 +37,41 @@
   &:nth-child(even) > div {
     background-color: $mantle;
   }
+
+  &:hover > div {
+    background-color: transparentize($mauve, 0.85);
+  }
+
+  &:nth-child(odd).selected > div {
+    background-color: mix($base, $mauve, 30%);
+    color: $base;
+  }
+
+  &:nth-child(even).selected > div {
+    background-color: mix($mantle, $mauve, 20%);
+    color: $mantle;
+  }
+
+  // &.selected:hover > div {
+  //   background-color: mix($mauve, $base, 50%);
+  // }
+}
+
+.icon {
+  padding: 0 0.5rem !important;
+  height: 100% !important;
+
+
+  svg {
+    font-size: 2rem;
+    height: 100%;
+  }
+}
+
+.name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .size {

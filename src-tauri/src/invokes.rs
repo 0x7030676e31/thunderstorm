@@ -36,6 +36,23 @@ pub async fn upload_files(state: State<'_, AppState>, files: Vec<String>) -> Res
     Ok(())
 }
 
+#[tauri::command]
+pub async fn download_files(_state: State<'_, AppState>, files: Vec<u32>) -> Result<(), ()> {
+    log::debug!("Downloading files: {:?}", files);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn delete_files(state: State<'_, AppState>, files: Vec<u32>) -> Result<(), ()> {
+    let mut state = state.write().await;
+    log::debug!("Deleting {} files", files.len());
+
+    state.files.retain(|file| !files.contains(&file.id));
+    state.write();
+
+    Ok(())
+}
+
 #[derive(Deserialize)]
 pub struct PartialSettings {
     token: Option<String>,
@@ -65,7 +82,7 @@ pub async fn set_settings(state: State<'_, AppState>, settings: PartialSettings)
     if earse_data {
         let handle = unsafe { state.rt.app_handle.as_ref().unwrap() };
         handle
-            .emit_all("erase", ())
+            .emit_all("erase_files", ())
             .expect("failed to emit eraseData");
 
         log::info!("Changed sensitive settings, erasing data");

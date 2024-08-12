@@ -1,60 +1,19 @@
-import { batch, createSignal, onCleanup, onMount } from "solid-js";
+import { Accessor, batch, createSignal, onCleanup, onMount, Setter, Show } from "solid-js";
 import { UnlistenFn, listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api";
-import { unit } from "../utils";
+import { filename, unit } from "../utils";
 import styles from "./footer.module.scss";
 
+type JobType = "uploading" | "downloading";
+
 export default function Footer() {
-  const [ queued, setQueued ] = createSignal<Array<{ name: string, size: number }>>([]);
-  const [ current, setCurrent ] = createSignal<{ index: number, progress: number } | null>(null);
-  const [ progress, setProgress ] = createSignal(0);
-  const [ finished, setFinished ] = createSignal(true);
+  const [job, setJob] = createSignal<JobType | null>(null);
+  const [finished, setFinished] = createSignal(true);
 
-  const totalSize = () => queued().reduce((acc, { size }) => acc + size, 0);
-  const totalProgress = () => progress() + (current()?.progress || 0);
-  const progressPercentage = () => current() !== null
-    ? (queued()[current()!.index].size === 0 ? 100 : current()!.progress / queued()[current()!.index].size * 100)
-    : 0;
-
-  let unlistenQueue: UnlistenFn | null = null;
-  let unlistenProgress: UnlistenFn | null = null;
-  let unlistenUploaded: UnlistenFn | null = null;
   let unlistenCancel: UnlistenFn | null = null;
   let unlistenUploadError: UnlistenFn | null = null;
 
   onMount(async () => {
-    unlistenQueue = await listen<Array<[string, number]>>("queue", data => {
-      batch(() => {
-        if (!finished()) {
-          setQueued(queued => [ ...queued, ...data.payload.map(([ name, size ]) => ({ name: name.split("/").pop()?.trim() || name, size }))]);
-          return;
-        }
-
-        setFinished(false);
-        setProgress(0);
-        setCurrent({ index: 0, progress: 0 });
-        setQueued(data.payload.map(([ name, size ]) => ({ name: name.split("/").pop()?.trim() || name, size })));
-      });
-    });
-
-    unlistenProgress = await listen<number>("progress", data => {
-      batch(() => {
-        setCurrent({ index: current()?.index || 0, progress: data.payload });
-      });
-    });
-
-    unlistenUploaded = await listen("uploaded", () => {
-      batch(() => {
-        if (queued().length === (current()?.index || 0) + 1) {
-          setFinished(true);
-          return;
-        }
-
-        setProgress(progress => progress + (current()?.progress || 0));
-        setCurrent({ index: (current()?.index || 0) + 1, progress: 0 });
-      });
-    });
-
     unlistenCancel = await listen("cancel", () => {
       setFinished(true);
     });
@@ -65,10 +24,8 @@ export default function Footer() {
   });
 
   onCleanup(() => {
-    unlistenQueue?.();
-    unlistenProgress?.();
-    unlistenUploaded?.();
     unlistenCancel?.();
+    unlistenUploadError?.();
   });
 
   return (
@@ -78,9 +35,83 @@ export default function Footer() {
         [styles.expanded]: !finished(),
       }}
     >
+      <UploadFooter
+        isActive={() => job() === "uploading" && !finished()}
+        setFinished={setFinished}
+        setJob={setJob}
+      />
+    </div>
+  );
+}
+
+type FooterComponent = {
+  isActive: Accessor<boolean>;
+  setFinished: Setter<boolean>;
+  setJob: Setter<JobType | null>;
+}
+
+type UploadQueue = Array<{ name: string, size: number }>;
+
+function UploadFooter({ isActive, setFinished, setJob }: FooterComponent) {
+  const [queued, setQueued] = createSignal<UploadQueue>([]);
+  const [current, setCurrent] = createSignal<{ index: number, progress: number } | null>(null);
+
+  // Total size of all files in the queue
+  const totalSize = () => queued().reduce((acc, { size }) => acc + size, 0);
+
+  // Total upload progress of all files in the queue so far (including the current file)
+  const totalProgress = () => queued().slice(0, current()?.index || 0).reduce((acc, { size }) => acc + size, 0) + (current()?.progress || 0);
+
+  // Percentage of the current file's upload progress
+  const percentage = () => current() !== null
+    ? (queued()[current()!.index].size === 0 ? 100 : current()!.progress / queued()[current()!.index].size * 100)
+    : 0;
+
+  let unlistenExtQueue: UnlistenFn | null = null;
+  let unlistenUploadProgress: UnlistenFn | null = null;
+  let unlistenFileUploaded: UnlistenFn | null = null;
+
+  onMount(async () => {
+    unlistenExtQueue = await listen<Array<[string, number]>>("extend_upload_queue", ({ payload }) => {
+      if (isActive()) {
+        setQueued([...queued(), ...payload.map(([name, size]) => ({ name: filename(name), size }))]);
+        return;
+      }
+
+      batch(() => {
+        setQueued(payload.map(([name, size]) => ({ name: filename(name), size })));
+        setCurrent({ index: 0, progress: 0 });
+        setJob("uploading");
+        setFinished(false);
+      });
+    });
+
+    unlistenUploadProgress = await listen<number>("upload_progress", ({ payload }) => {
+      setCurrent(({ index: current()?.index || 0, progress: payload }));
+    });
+
+    unlistenFileUploaded = await listen("file_uploaded", () => {
+      const shouldFinish = queued().length === (current()?.index || 0) + 1;
+      if (shouldFinish) {
+        setFinished(true);
+        return;
+      }
+
+      setCurrent({ index: (current()?.index || 0) + 1, progress: 0 });
+    });
+  });
+
+  onCleanup(() => {
+    unlistenExtQueue?.();
+    unlistenUploadProgress?.();
+    unlistenFileUploaded?.();
+  });
+
+  return (
+    <Show when={isActive()}>
       <div class={styles.left}>
         <div class={styles.text}>
-          Uploading {current() !== null && queued()[current()!.index].name}...
+          Uploading { } {current() !== null && queued()[current()!.index].name}...
         </div>
         <div class={styles.subtext} classList={{ [styles.single]: queued().length <= 1 }}>
           <p>{unit(current()?.progress || 0)} / {current() !== null && unit(queued()[current()!.index].size)}</p>
@@ -90,7 +121,7 @@ export default function Footer() {
           </p>
         </div>
         <div class={styles.progress}>
-          <div class={styles.bar} style={{ width: current() === null ? "0%" : `${progressPercentage()}%` }} />
+          <div class={styles.bar} style={{ width: current() === null ? "0%" : `${percentage()}%` }} />
         </div>
       </div>
       <div class={styles.right}>
@@ -98,6 +129,6 @@ export default function Footer() {
           Cancel
         </div>
       </div>
-    </div>
+    </Show>
   );
 }

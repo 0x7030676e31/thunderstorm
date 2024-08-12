@@ -1,7 +1,7 @@
 use std::cell::UnsafeCell;
 use std::cmp;
 use std::fs::File;
-use std::io::{Error, ErrorKind, Read, Seek, SeekFrom};
+use std::io::{self, Error, ErrorKind, Read, Seek, SeekFrom};
 use std::sync::{Arc, Mutex};
 
 use aes_gcm::aead::AeadMutInPlace;
@@ -35,16 +35,13 @@ unsafe impl Send for Reader {}
 unsafe impl Sync for Reader {}
 
 impl Reader {
-    pub fn new<T: AsRef<str>>(path: T, key: [u8; 32], sender: mpsc::Sender<usize>) -> Option<Self> {
-        let file = match File::open(path.as_ref()) {
-            Ok(file) => file,
-            Err(_) => return None,
-        };
-
-        let size = match file.metadata() {
-            Ok(meta) => meta.len(),
-            Err(_) => return None,
-        };
+    pub fn new<T: AsRef<str>>(
+        path: T,
+        key: [u8; 32],
+        sender: mpsc::Sender<usize>,
+    ) -> io::Result<Self> {
+        let file = File::open(path.as_ref())?;
+        let size = file.metadata()?.len();
 
         let slices = (size + BYTES_PER_SLICE - 1) / BYTES_PER_SLICE;
         let full_slices = size / BYTES_PER_SLICE;
@@ -58,7 +55,7 @@ impl Reader {
         let key = Key::<Aes256Gcm>::from_slice(&key);
         let cipher = Aes256Gcm::new(key);
 
-        Some(Self {
+        Ok(Self {
             file: Arc::new(Mutex::new(file)),
             #[allow(clippy::arc_with_non_send_sync)]
             cipher: Arc::new(UnsafeCell::new(cipher)),
