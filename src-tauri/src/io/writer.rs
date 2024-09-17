@@ -21,6 +21,8 @@ struct Cipher(UnsafeCell<Aes256Gcm>);
 unsafe impl Send for Cipher {}
 unsafe impl Sync for Cipher {}
 
+// unsafe impl Send for Aes256Gcm {}
+
 pub struct Writer {
     file: Arc<Mutex<File>>,
     cipher: Arc<Cipher>,

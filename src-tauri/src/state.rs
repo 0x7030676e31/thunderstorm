@@ -1,116 +1,25 @@
 use crate::api::{fetch_messages, Take};
 use crate::consts::{DOWNLOAD_THREADS, UPLOAD_THREADS};
 use crate::errors::{DownloadError, UploadError};
-use crate::reader::{Cluster, Reader};
-use crate::writer::{self, Writer};
+use crate::io::reader::{Cluster, Reader};
+use crate::io::writer::{self, Writer};
+use crate::utils::{download_target, path, Flatten};
 use crate::{api, AppState};
 
 use std::collections::VecDeque;
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::OnceLock;
 use std::time::Instant;
-use std::{cmp, env, fs, ptr};
+use std::{cmp, fs, ptr};
 
+use futures::future;
 use futures::stream::{self, StreamExt, TryStreamExt};
-use futures::{future, Future};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 use tokio::sync::{mpsc, oneshot};
 
 use tokio::select;
-use tokio::task::{JoinError, JoinHandle};
-
-fn path() -> &'static str {
-    static PATH: OnceLock<String> = OnceLock::new();
-    PATH.get_or_init(|| match env::consts::OS {
-        "linux" => format!(
-            "{}/.config/thunderstorm",
-            env::var("HOME").expect("HOME not set")
-        ),
-        "windows" => format!(
-            "{}/thunderstorm",
-            env::var("LOCALAPPDATA").expect("LOCALAPPDATA not set")
-        ),
-        "macos" => format!(
-            "{}/Library/Application Support/thunderstorm",
-            env::var("HOME").expect("HOME not set")
-        ),
-        _ => panic!("unsupported OS"),
-    })
-}
-
-fn download_path() -> &'static str {
-    static PATH: OnceLock<String> = OnceLock::new();
-    PATH.get_or_init(|| match env::consts::OS {
-        "linux" => format!("{}/Downloads", env::var("HOME").expect("HOME not set")),
-        "windows" => format!(
-            "{}/Downloads",
-            env::var("USERPROFILE").expect("USERPROFILE not set")
-        ),
-        "macos" => format!("{}/Downloads", env::var("HOME").expect("HOME not set")),
-        _ => panic!("unsupported OS"),
-    })
-}
-
-fn download_target(path: &str) -> String {
-    let filename = match env::consts::OS {
-        "linux" => format!(
-            "{}/{}",
-            download_path(),
-            path.split('/').last().expect("failed to get filename")
-        ),
-        "windows" => format!(
-            "{}\\{}",
-            download_path(),
-            path.split('\\').last().expect("failed to get filename")
-        ),
-        "macos" => format!(
-            "{}/{}",
-            download_path(),
-            path.split('/').last().expect("failed to get filename")
-        ),
-        _ => panic!("unsupported OS"),
-    };
-
-    let (base, ext) = match filename.rsplit_once('.') {
-        Some((base, ext)) => (base, ".".to_owned() + ext),
-        None => (filename.as_str(), String::new()),
-    };
-
-    if Path::new(&filename).exists() {
-        let mut i = 1;
-        while Path::new(&format!("{} ({}){}", base, i, ext)).exists() {
-            i += 1;
-        }
-
-        format!("{} ({}){}", base, i, ext)
-    } else {
-        filename
-    }
-}
-
-pub trait Flatten<T, E1, E2>
-where
-    Self: Future<Output = Result<Result<T, E1>, E2>>,
-    E1: Default,
-{
-    async fn flatten(self) -> Result<T, E1>;
-}
-
-impl<T, E> Flatten<T, E, JoinError> for JoinHandle<Result<T, E>>
-where
-    E: Default,
-{
-    async fn flatten(self) -> Result<T, E> {
-        match self.await {
-            Ok(Ok(result)) => Ok(result),
-            Ok(Err(err)) => Err(err),
-            Err(_) => Err(E::default()),
-        }
-    }
-}
 
 #[derive(Debug)]
 #[allow(dead_code)]
@@ -186,6 +95,8 @@ pub struct State {
     pub channel_id: String,
     pub guild_id: String,
     pub token: String,
+    pub do_encrypt: bool,
+    pub do_checksum: bool,
     pub files: Vec<File>,
     #[serde(skip)]
     pub rt: RtState,
@@ -201,6 +112,8 @@ impl Default for State {
             channel_id: String::new(),
             guild_id: String::new(),
             token: String::new(),
+            do_encrypt: true,
+            do_checksum: true,
             files: Vec::new(),
             rt: RtState::default(),
         }
@@ -374,7 +287,7 @@ impl State {
         });
 
         let key = self.aes_key();
-        let mut reader = match Reader::new(&file, &key, tx) {
+        let mut reader = match Reader::new(&file, &key, tx, None) {
             Ok(reader) => reader,
             Err(err) => {
                 log::error!("failed to open file: {}", file);

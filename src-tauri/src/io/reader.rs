@@ -8,7 +8,10 @@ use std::sync::{Arc, Mutex};
 
 use aes_gcm::aead::AeadMutInPlace;
 use aes_gcm::{Aes256Gcm, Key, KeyInit, Nonce};
+use crc32fast::Hasher;
 use tokio::sync::mpsc;
+
+type CrcSender = mpsc::Sender<(u64, Hasher)>;
 
 #[derive(Debug)]
 pub struct Reader {
@@ -19,7 +22,8 @@ pub struct Reader {
     cluster: usize,
     pub file_size: u64,
     final_size: u64,
-    sender: mpsc::Sender<usize>,
+    read_sender: mpsc::Sender<usize>,
+    crc_sender: Option<CrcSender>,
 }
 
 unsafe impl Send for Reader {}
@@ -29,7 +33,8 @@ impl Reader {
     pub fn new<T: AsRef<str>>(
         path: T,
         key: &[u8; 32],
-        sender: mpsc::Sender<usize>,
+        read_sender: mpsc::Sender<usize>,
+        crc_sender: Option<CrcSender>,
     ) -> io::Result<Self> {
         let file = File::open(path.as_ref())?;
         let size = file.metadata()?.len();
@@ -55,7 +60,8 @@ impl Reader {
             cluster: 0,
             file_size: size,
             final_size: encrypted_size,
-            sender,
+            read_sender,
+            crc_sender,
         })
     }
 
@@ -78,7 +84,8 @@ impl Reader {
             slice: 0,
             index: self.cluster as u64 - 1,
             final_size: self.final_size,
-            sender: self.sender.clone(),
+            read_sender: self.read_sender.clone(),
+            crc_sender: self.crc_sender.clone(),
         })
     }
 }
@@ -92,7 +99,8 @@ pub struct Cluster {
     slice: usize,
     pub index: u64, // index of the current cluster
     final_size: u64,
-    sender: mpsc::Sender<usize>,
+    read_sender: mpsc::Sender<usize>,
+    crc_sender: Option<CrcSender>,
 }
 
 unsafe impl Send for Cluster {}
@@ -109,6 +117,11 @@ impl Cluster {
         }
 
         let this_slice = self.index * CLUSTER_CAP + self.slice as u64;
+        let hasher = if self.crc_sender.is_some() {
+            Some(Hasher::new())
+        } else {
+            None
+        };
 
         self.slice += 1;
         Some(Slice {
@@ -119,7 +132,9 @@ impl Cluster {
             slice: this_slice,
             index: 0,
             nonce: [0; 12],
-            sender: self.sender.clone(),
+            read_sender: self.read_sender.clone(),
+            crc_sender: self.crc_sender.clone(),
+            crc32: hasher,
         })
     }
 }
@@ -132,17 +147,36 @@ pub struct Slice {
     slice: u64, // index of this slice
     index: u64, // index of the current buffer
     nonce: [u8; 12],
-    sender: mpsc::Sender<usize>,
+    read_sender: mpsc::Sender<usize>,
+    crc_sender: Option<CrcSender>,
+    crc32: Option<Hasher>,
 }
 
 unsafe impl Send for Slice {}
 unsafe impl Sync for Slice {}
+
+impl Slice {
+    fn send_crc(&mut self) {
+        let hasher = self.crc32.take();
+        let sender = self.crc_sender.take();
+
+        if let (Some(hasher), Some(sender)) = (hasher, sender) {
+            let slice = self.slice;
+            tokio::spawn(async move {
+                if let Err(err) = sender.send((slice, hasher)).await {
+                    log::error!("Failed to send CRC32: {:?}", err);
+                }
+            });
+        }
+    }
+}
 
 impl Iterator for Slice {
     type Item = Result<Vec<u8>, Error>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.index == BUFFERS_PER_SLICE {
+            self.send_crc();
             return None;
         }
 
@@ -159,6 +193,7 @@ impl Iterator for Slice {
         );
 
         if buffer_size == 0 {
+            self.send_crc();
             return None;
         }
 
@@ -171,8 +206,12 @@ impl Iterator for Slice {
         file.read_exact(&mut buffer).expect("Failed to read file");
 
         drop(file);
+        if let Some(hasher) = self.crc32.as_mut() {
+            hasher.update(&buffer)
+        }
+
         let size = buffer.len();
-        let sender = self.sender.clone();
+        let sender = self.read_sender.clone();
         tokio::spawn(async move {
             if let Err(err) = sender.send(size).await {
                 log::error!("Failed to send buffer size: {:?}", err);

@@ -16,6 +16,8 @@ pub struct Settings<'a> {
     token: &'a String,
     channel: &'a String,
     guild: &'a String,
+    do_encrypt: bool,
+    do_checksum: bool,
 }
 
 #[tauri::command]
@@ -25,6 +27,8 @@ pub async fn get_settings(state: State<'_, AppState>) -> Result<String, ()> {
         token: &state.token,
         channel: &state.channel_id,
         guild: &state.guild_id,
+        do_encrypt: state.do_encrypt,
+        do_checksum: state.do_checksum,
     };
 
     Ok(serde_json::to_string(&settings).unwrap())

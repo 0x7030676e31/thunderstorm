@@ -266,14 +266,13 @@ function DiscordTab({ settings, setDiff, onSubmit }: TabProps) {
       <h1>Discord</h1>
 
       <p class={styles.label}>TOKEN</p>
-      <div class={styles.secretText}>
+      <div class={styles.secretText} ref={tokenRef}>
         <input
           type={tokenShown() ? "text" : "password"}
           placeholder="Discord token"
           class={styles.secretTextInput}
           value={token()}
           onInput={(e) => setToken((e.target as HTMLInputElement).value)}
-          ref={tokenRef}
         />
 
         <div

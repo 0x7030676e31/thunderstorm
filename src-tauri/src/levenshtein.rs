@@ -6,8 +6,8 @@ pub fn levenshtein(a: &str, b: &str) -> f64 {
 
     let mut matrix: Vec<Vec<usize>> = vec![vec![0; b_len + 1]; a_len + 1];
 
-    for i in 0..(a_len + 1) {
-        matrix[i][0] = i;
+    for (i, item) in matrix.iter_mut().enumerate().take(a_len + 1) {
+        item[0] = i;
     }
 
     for j in 0..(b_len + 1) {

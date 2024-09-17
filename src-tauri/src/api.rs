@@ -1,5 +1,5 @@
 use crate::errors::UploadError;
-use crate::reader::Cluster;
+use crate::io::reader::Cluster;
 use crate::{consts::SLICE_SIZE, errors::DownloadError};
 
 use std::cmp;
