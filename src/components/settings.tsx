@@ -1,8 +1,8 @@
 import { Accessor, Match, Setter, Switch, batch, createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import { Portal } from "solid-js/web";
-import { IoWarningOutline } from "solid-icons/io";
-import styles from "./settings.module.scss";
+import { IoWarningOutline, IoEyeOutline, IoEyeOffOutline } from "solid-icons/io";
 import { invoke } from "@tauri-apps/api";
+import styles from "./settings.module.scss";
 
 type Props = {
   open: boolean;
@@ -97,7 +97,7 @@ export default function Settings(props: Props) {
           Discord
         </div>
         <div class={styles.tab} classList={{ [styles.active]: tab() === 1 }} onClick={() => changeTab(1)}>
-          Encryption
+          Security & Integrity
         </div>
         <div class={styles.tab} classList={{ [styles.active]: tab() === 2 }} onClick={() => changeTab(2)}>
           Application
@@ -193,6 +193,7 @@ function DiscordTab({ settings, setDiff, onSubmit }: TabProps) {
   const [token, setToken] = createSignal(settings().token);
   const [channel, setChannel] = createSignal(settings().channel);
   const [guild, setGuild] = createSignal(settings().guild);
+  const [tokenShown, setTokenShown] = createSignal(false);
 
   let tokenRef: HTMLInputElement | undefined;
   let channelRef: HTMLInputElement | undefined;
@@ -262,14 +263,24 @@ function DiscordTab({ settings, setDiff, onSubmit }: TabProps) {
       <h1>Discord</h1>
 
       <p class={styles.label}>TOKEN</p>
-      <input
-        type="text"
-        placeholder="Discord token"
-        class={styles.text}
-        value={token()}
-        onInput={(e) => setToken((e.target as HTMLInputElement).value)}
-        ref={tokenRef}
-      />
+      <div class={styles.secretText}>
+        <input
+          type={tokenShown() ? "text" : "password"}
+          placeholder="Discord token"
+          class={styles.secretTextInput}
+          value={token()}
+          onInput={(e) => setToken((e.target as HTMLInputElement).value)}
+          ref={tokenRef}
+        />
+
+        <div
+          class={styles.eye}
+          onClick={() => setTokenShown(!tokenShown())}
+        >
+          {tokenShown() ? <IoEyeOffOutline /> : <IoEyeOutline />}
+        </div>
+      </div>
+
       <p class={styles.note}>Changing the token field may break the application in some cases. Use with caution.</p>
 
       <div class={styles.inline}>
