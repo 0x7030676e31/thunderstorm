@@ -33,10 +33,10 @@ unsafe impl Sync for Writer {}
 impl Writer {
     pub fn new<T: AsRef<Path>>(
         path: T,
-        key: [u8; 32],
+        key: &[u8; 32],
         sender: mpsc::Sender<usize>,
     ) -> io::Result<Self> {
-        let key = Key::<Aes256Gcm>::from_slice(&key);
+        let key = Key::<Aes256Gcm>::from_slice(key);
         let cipher = Aes256Gcm::new(key);
 
         Ok(Self {

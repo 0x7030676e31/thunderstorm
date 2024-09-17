@@ -112,6 +112,9 @@ export default function Settings(props: Props) {
           <Match when={tab() === 0}>
             <DiscordTab settings={props.settings} setDiff={setDiff} onSubmit={settings => submit(settings)} />
           </Match>
+          <Match when={tab() === 1}>
+            <SecurityAndIntegrationTab settings={props.settings} setDiff={setDiff} onSubmit={settings => submit(settings)} />
+          </Match>
         </Switch>
 
         <div
@@ -311,6 +314,19 @@ function DiscordTab({ settings, setDiff, onSubmit }: TabProps) {
         onInput={(e) => setGuild((e.target as HTMLInputElement).value)}
         ref={guildRef}
       />
+    </div>
+  );
+}
+
+// Enable encryption
+// Change 
+
+// Enable checksum
+
+function SecurityAndIntegrationTab({ }: TabProps) {
+  return (
+    <div>
+      <h1>Security & Integration</h1>
     </div>
   );
 }

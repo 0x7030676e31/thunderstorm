@@ -87,7 +87,7 @@ pub async fn set_settings(state: State<'_, AppState>, settings: PartialSettings)
         let handle = unsafe { state.rt.app_handle.as_ref().unwrap() };
         handle
             .emit_all("erase_files", ())
-            .expect("failed to emit eraseData");
+            .expect("failed to emit erase_files");
 
         log::info!("Changed sensitive settings, erasing data");
         state.files.clear();

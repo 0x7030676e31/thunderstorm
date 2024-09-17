@@ -28,7 +28,7 @@ unsafe impl Sync for Reader {}
 impl Reader {
     pub fn new<T: AsRef<str>>(
         path: T,
-        key: [u8; 32],
+        key: &[u8; 32],
         sender: mpsc::Sender<usize>,
     ) -> io::Result<Self> {
         let file = File::open(path.as_ref())?;
@@ -43,7 +43,7 @@ impl Reader {
         let encrypted_size =
             size + full_slices * BUFFERS_PER_SLICE * AES_OVERHEAD + trailing_buffers * AES_OVERHEAD;
 
-        let key = Key::<Aes256Gcm>::from_slice(&key);
+        let key = Key::<Aes256Gcm>::from_slice(key);
         let cipher = Aes256Gcm::new(key);
 
         Ok(Self {

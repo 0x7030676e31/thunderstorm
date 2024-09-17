@@ -269,30 +269,6 @@
     }
   }
 
-  // outline: none;
-  // border: 1px solid $surface0;
-  // background-color: $mantle;
-  // border-radius: 4px;
-  // padding: 0.5rem;
-  // color: $text;
-  // font-size: 0.85rem;
-  // font-weight: 500;
-  // width: 100%;
-  // box-sizing: border-box;
-  // transition: all 0.1s ease;
-
-  // &::placeholder {
-  //   color: $overlay1;
-  // }
-
-  // &:focus {
-  //   border-color: $text;
-  // }
-
-  // &.blink {
-  //   animation: blinkField 0.5s ease;
-  // }
-
   .secretText {
     border: 1px solid $surface0;
     background-color: $mantle;
@@ -310,6 +286,10 @@
       border-color: $text;
     }
 
+    &.blink {
+      animation: blinkField 0.5s ease;
+    }
+
     .secretTextInput {
       padding: 0.5rem;
       color: $text;
@@ -318,6 +298,10 @@
       background-color: transparent;
       border: none;
       width: 100%;
+    
+      &::placeholder {
+        color: $overlay1;
+      }
     }
     
     .eye {

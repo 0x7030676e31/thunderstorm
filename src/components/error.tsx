@@ -77,6 +77,12 @@ function ErrorBody({ type, message }: { type: Accessor<string>, message: Accesso
             The user lacks permissions to access the specified channel or guild. Ensure your token has the necessary permissions.
           </p>
         </Match>
+        <Match when={type() === "Unknown"}>
+          <h2> Unknown Error </h2>
+          <p>
+            {message()}
+          </p>
+        </Match>
       </Switch>
     </div>
   );

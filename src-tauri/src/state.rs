@@ -187,9 +187,6 @@ pub struct State {
     pub guild_id: String,
     pub token: String,
     pub files: Vec<File>,
-
-    #[serde(with = "serde_bytes")]
-    pub encryption_key: [u8; 32],
     #[serde(skip)]
     pub rt: RtState,
 }
@@ -199,17 +196,12 @@ unsafe impl Sync for State {}
 
 impl Default for State {
     fn default() -> Self {
-        let mut rng = rand::thread_rng();
-        let mut key = [0; 32];
-        rng.fill(&mut key[..]);
-
         Self {
             next_id: 1,
             channel_id: String::new(),
             guild_id: String::new(),
             token: String::new(),
             files: Vec::new(),
-            encryption_key: key,
             rt: RtState::default(),
         }
     }
@@ -224,6 +216,8 @@ pub struct File {
     pub created_at: u64,
     pub updated_at: u64,
     pub crc32: u32,
+    #[serde(with = "serde_bytes")]
+    pub encryption_key: [u8; 32],
 }
 
 impl State {
@@ -290,6 +284,14 @@ impl State {
         id
     }
 
+    pub fn aes_key(&self) -> [u8; 32] {
+        let mut rng = rand::thread_rng();
+        let mut key = [0; 32];
+        rng.fill(&mut key[..]);
+
+        key
+    }
+
     pub fn extend_upload_queue(&mut self, files: Vec<String>) {
         if !self.rt.job.is_upload_extendable() {
             log::warn!("Not uploading, ignoring files");
@@ -306,7 +308,7 @@ impl State {
                     log::error!("failed to get file metadata: {}", err);
                     handle
                         .emit_all("upload_error", &UploadError::Io(err))
-                        .expect("failed to emit fileError");
+                        .expect("failed to emit upload_error");
 
                     return;
                 }
@@ -330,7 +332,7 @@ impl State {
 
         handle
             .emit_all("extend_upload_queue", &queue)
-            .expect("failed to emit addFiles");
+            .expect("failed to emit extend_upload_queue");
 
         log::info!("Extending the queue with {} files", queue.len());
         self.rt
@@ -367,17 +369,18 @@ impl State {
                 bytes += read;
                 handle
                     .emit_all("upload_progress", bytes)
-                    .expect("failed to emit uploadProgress");
+                    .expect("failed to emit upload_progress");
             }
         });
 
-        let mut reader = match Reader::new(&file, self.encryption_key, tx) {
+        let key = self.aes_key();
+        let mut reader = match Reader::new(&file, &key, tx) {
             Ok(reader) => reader,
             Err(err) => {
                 log::error!("failed to open file: {}", file);
                 handle
                     .emit_all("upload_error", &UploadError::Io(err))
-                    .expect("failed to emit fileError");
+                    .expect("failed to emit upload_error");
 
                 self.rt.job = Job::Idle;
                 self.rt.upload_queue.clear();
@@ -487,11 +490,11 @@ impl State {
             let ids = match futures {
                 Ok((ids, _, _)) => ids,
                 Err(err) => {
-                    log::error!("Failed to upload file, reason: {}", err);
+                    log::error!("Failed to upload a file, reason: {}", err);
 
                     handle
                         .emit_all("upload_error", &err)
-                        .expect("failed to emit upload error");
+                        .expect("failed to emit upload_error");
 
                     state.rt.upload_queue.clear();
                     state.rt.job = Job::Idle;
@@ -516,11 +519,12 @@ impl State {
                 created_at: timestamp,
                 updated_at: timestamp,
                 crc32: 0,
+                encryption_key: key,
             };
 
             handle
                 .emit_all("file_uploaded", &file)
-                .expect("failed to emit upload");
+                .expect("failed to emit file_uploaded");
 
             state.files.push(file);
 
@@ -536,10 +540,12 @@ impl State {
         }
 
         let mut queue = Vec::with_capacity(files.len());
+        let mut pairs = Vec::with_capacity(files.len());
         let handle = unsafe { self.rt.app_handle.as_ref().unwrap() };
 
         for id in files {
             if let Some(file) = self.files.iter().find(|file| file.id == id) {
+                pairs.push((&file.path, file.size));
                 queue.push(file.id);
             }
         }
@@ -550,8 +556,8 @@ impl State {
         }
 
         handle
-            .emit_all("extend_download_queue", &queue)
-            .expect("failed to emit addFiles");
+            .emit_all("extend_download_queue", &pairs)
+            .expect("failed to emit extend_download_queue");
 
         log::info!("Extending the queue with {} files", queue.len());
         self.rt.download_queue.extend(queue);
@@ -584,7 +590,7 @@ impl State {
                 log::error!("File not found: {}", id);
                 handle
                     .emit_all("download_error", &DownloadError::NotFoundLocal)
-                    .expect("failed to emit fileError");
+                    .expect("failed to emit download_error");
 
                 self.rt.job = Job::Idle;
                 self.rt.download_queue.clear();
@@ -602,8 +608,8 @@ impl State {
             while let Some(read) = rx.recv().await {
                 bytes += read;
                 handle
-                    .emit_all("upload_progress", bytes)
-                    .expect("failed to emit uploadProgress");
+                    .emit_all("download_progress", bytes)
+                    .expect("failed to emit download_progress");
             }
         });
 
@@ -613,13 +619,13 @@ impl State {
         let cluster_count = file.download_ids.len();
         let mut ids = file.download_ids.clone();
 
-        let writer = match Writer::new(&target, self.encryption_key, tx) {
+        let writer = match Writer::new(&target, &file.encryption_key, tx) {
             Ok(writer) => writer,
             Err(err) => {
                 log::error!("failed to open file: {}", target);
                 handle
                     .emit_all("download_error", &DownloadError::Io(err))
-                    .expect("failed to emit fileError");
+                    .expect("failed to emit download_error");
 
                 self.rt.job = Job::Idle;
                 self.rt.download_queue.clear();
@@ -700,6 +706,10 @@ impl State {
                 futures = futures => futures,
                 _ = cancel_rx => {
                     log::debug!("Download canceled");
+                    if let Err(err) = fs::remove_file(&target) {
+                        log::error!("failed to remove file: {}", err);
+                    }
+
                     return;
                 }
             };
@@ -713,7 +723,7 @@ impl State {
                 Ok((_, _)) => {
                     handle
                         .emit_all("file_downloaded", &target)
-                        .expect("failed to emit download");
+                        .expect("failed to emit file_downloaded");
 
                     state.rt.download_queue.clear();
                     state.rt.job = Job::Idle;
@@ -723,11 +733,17 @@ impl State {
 
                     handle
                         .emit_all("download_error", &err)
-                        .expect("failed to emit download error");
+                        .expect("failed to emit download_error");
 
                     state.rt.download_queue.clear();
                     state.rt.job = Job::Idle;
+
+                    return;
                 }
+            }
+
+            if !state.rt.download_queue.is_empty() {
+                state.download();
             }
         });
     }
@@ -759,6 +775,6 @@ impl State {
         let handle = unsafe { self.rt.app_handle.as_ref().unwrap() };
         handle
             .emit_all("job_canceled", ())
-            .expect("failed to emit uploadCanceled");
+            .expect("failed to emit job_canceled");
     }
 }

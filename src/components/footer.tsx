@@ -40,6 +40,11 @@ export default function Footer() {
         setFinished={setFinished}
         setJob={setJob}
       />
+      <DownloadFooter
+        isActive={() => job() === "downloading" && !finished()}
+        setFinished={setFinished}
+        setJob={setJob}
+      />
     </div>
   );
 }
@@ -50,10 +55,10 @@ type FooterComponent = {
   setJob: Setter<JobType | null>;
 }
 
-type UploadQueue = Array<{ name: string, size: number }>;
+type UplDownlQueue = Array<{ name: string, size: number }>;
 
 function UploadFooter({ isActive, setFinished, setJob }: FooterComponent) {
-  const [queued, setQueued] = createSignal<UploadQueue>([]);
+  const [queued, setQueued] = createSignal<UplDownlQueue>([]);
   const [current, setCurrent] = createSignal<{ index: number, progress: number } | null>(null);
 
   // Total size of all files in the queue
@@ -73,6 +78,7 @@ function UploadFooter({ isActive, setFinished, setJob }: FooterComponent) {
 
   onMount(async () => {
     unlistenExtQueue = await listen<Array<[string, number]>>("extend_upload_queue", ({ payload }) => {
+      console.log("extend_upload_queue", payload);
       if (isActive()) {
         setQueued([...queued(), ...payload.map(([name, size]) => ({ name: filename(name), size }))]);
         return;
@@ -91,6 +97,8 @@ function UploadFooter({ isActive, setFinished, setJob }: FooterComponent) {
     });
 
     unlistenFileUploaded = await listen("file_uploaded", () => {
+      console.log("file_uploaded");
+
       const shouldFinish = queued().length === (current()?.index || 0) + 1;
       if (shouldFinish) {
         setFinished(true);
@@ -112,6 +120,87 @@ function UploadFooter({ isActive, setFinished, setJob }: FooterComponent) {
       <div class={styles.left}>
         <div class={styles.text}>
           Uploading { } {current() !== null && queued()[current()!.index].name}...
+        </div>
+        <div class={styles.subtext} classList={{ [styles.single]: queued().length <= 1 }}>
+          <p>{unit(current()?.progress || 0)} / {current() !== null && unit(queued()[current()!.index].size)}</p>
+          <div class={styles.separator} />
+          <p>
+            {unit(totalProgress())} / {unit(totalSize())} ({(current()?.index || 0) + 1}/{queued().length})
+          </p>
+        </div>
+        <div class={styles.progress}>
+          <div class={styles.bar} style={{ width: current() === null ? "0%" : `${percentage()}%` }} />
+        </div>
+      </div>
+      <div class={styles.right}>
+        <div class={styles.cancel} onClick={() => invoke("cancel")}>
+          Cancel
+        </div>
+      </div>
+    </Show>
+  );
+}
+
+function DownloadFooter({ isActive, setFinished, setJob }: FooterComponent) {
+  const [queued, setQueued] = createSignal<UplDownlQueue>([]);
+  const [current, setCurrent] = createSignal<{ index: number, progress: number } | null>(null);
+
+  // Total size of all files in the queue
+  const totalSize = () => queued().reduce((acc, { size }) => acc + size, 0);
+
+  // Total download progress of all files in the queue so far (including the current file)
+  const totalProgress = () => queued().slice(0, current()?.index || 0).reduce((acc, { size }) => acc + size, 0) + (current()?.progress || 0);
+
+  // Percentage of the current file's download progress
+  const percentage = () => current() !== null
+    ? (queued()[current()!.index].size === 0 ? 100 : current()!.progress / queued()[current()!.index].size * 100)
+    : 0;
+
+  let unlistenExtQueue: UnlistenFn | null = null;
+  let unlistenDownloadProgress: UnlistenFn | null = null;
+  let unlistenFileDownloaded: UnlistenFn | null = null;
+
+  onMount(async () => {
+    unlistenExtQueue = await listen<Array<[string, number]>>("extend_download_queue", ({ payload }) => {
+      if (isActive()) {
+        setQueued([...queued(), ...payload.map(([name, size]) => ({ name: filename(name), size }))]);
+        return;
+      }
+
+      batch(() => {
+        setQueued(payload.map(([name, size]) => ({ name: filename(name), size })));
+        setCurrent({ index: 0, progress: 0 });
+        setJob("downloading");
+        setFinished(false);
+      });
+    });
+
+    unlistenDownloadProgress = await listen<number>("download_progress", ({ payload }) => {
+      setCurrent(({ index: current()?.index || 0, progress: payload }));
+    });
+
+    unlistenFileDownloaded = await listen("file_downloaded", () => {
+      const shouldFinish = queued().length === (current()?.index || 0) + 1;
+      if (shouldFinish) {
+        setFinished(true);
+        return;
+      }
+
+      setCurrent({ index: (current()?.index || 0) + 1, progress: 0 });
+    });
+  });
+
+  onCleanup(() => {
+    unlistenExtQueue?.();
+    unlistenDownloadProgress?.();
+    unlistenFileDownloaded?.();
+  });
+
+  return (
+    <Show when={isActive()}>
+      <div class={styles.left}>
+        <div class={styles.text}>
+          Downloading { } {current() !== null && queued()[current()!.index].name}...
         </div>
         <div class={styles.subtext} classList={{ [styles.single]: queued().length <= 1 }}>
           <p>{unit(current()?.progress || 0)} / {current() !== null && unit(queued()[current()!.index].size)}</p>

@@ -62,8 +62,8 @@ impl Serialize for UploadError {
                 state.serialize_field("message", "")?;
             }
             UploadError::Unknown((code, ref message)) => {
-                state.serialize_field("type", "")?;
-                state.serialize_field("message", &format!("{} {}", code, message))?;
+                state.serialize_field("type", "Unknown")?;
+                state.serialize_field("message", &format!("{} - {}", code, message))?;
             }
             UploadError::JoinError => {
                 state.serialize_field("type", "JoinError")?;
