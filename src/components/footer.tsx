@@ -10,11 +10,11 @@ export default function Footer() {
   const [job, setJob] = createSignal<JobType | null>(null);
   const [finished, setFinished] = createSignal(true);
 
-  let unlistenCancel: UnlistenFn | null = null;
+  let unlistenJobCanceled: UnlistenFn | null = null;
   let unlistenUploadError: UnlistenFn | null = null;
 
   onMount(async () => {
-    unlistenCancel = await listen("cancel", () => {
+    unlistenJobCanceled = await listen("job_canceled", () => {
       setFinished(true);
     });
 
@@ -24,7 +24,7 @@ export default function Footer() {
   });
 
   onCleanup(() => {
-    unlistenCancel?.();
+    unlistenJobCanceled?.();
     unlistenUploadError?.();
   });
 

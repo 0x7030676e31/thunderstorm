@@ -1,4 +1,4 @@
-import { Accessor, batch, createSignal, onCleanup, onMount, Setter, Show } from "solid-js";
+import { Accessor, batch, createEffect, createSignal, onCleanup, onMount, Setter, Show } from "solid-js";
 import { listen, UnlistenFn } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api";
 
@@ -17,6 +17,9 @@ export default function App() {
   const [files, setFiles] = createSignal<IFile[]>([]);
   const [selected, setSelected] = createSignal<number[]>([]);
   const [query, setQuery] = createSignal<string>("");
+  const [order, setOrder] = createSignal<number[] | null>(null);
+
+  const [ready, setReady] = createSignal(false);
 
   const [errorOpen, setErrorOpen] = createSignal(false);
   const [error, setError] = createSignal<IError | null>(null);
@@ -37,13 +40,19 @@ export default function App() {
 
     unlistenFileUploaded = await listen<IFile>("file_uploaded", async data => {
       setFiles(files => [...files, data.payload]);
+      if (query().length === 0) {
+        return;
+      }
+
+      const results = await invoke<number[]>("query", { query: query() });
+      setOrder(results);
     });
 
-    unlistenUploadError = await listen<Omit<IError, "source">>("upload_error", async data => {
+    unlistenUploadError = await listen<Omit<IError, "job">>("upload_error", async data => {
       batch(() => {
         setErrorOpen(true);
         setError({
-          source: "upload",
+          job: "upload",
           ...data.payload,
         });
       });
@@ -55,6 +64,7 @@ export default function App() {
     batch(() => {
       setSettings(settings);
       setFiles(files);
+      setReady(true);
     });
   });
 
@@ -62,6 +72,16 @@ export default function App() {
     unlistenEraseFiles?.();
     unlistenFileUploaded?.();
     unlistenUploadError?.();
+  });
+
+  createEffect(async () => {
+    if (query().length === 0) {
+      setOrder(null);
+      return;
+    }
+
+    const results = await invoke<number[]>("query", { query: query() });
+    setOrder(results);
   });
 
   async function deleteSelected() {
@@ -85,11 +105,14 @@ export default function App() {
         rename={() => { }}
       />
 
-      <Content
-        setSelected={setSelected}
-        selected={selected}
-        files={files}
-      />
+      <Show when={ready()}>
+        <Content
+          setSelected={setSelected}
+          selected={selected}
+          files={files}
+          order={order}
+        />
+      </Show>
 
       <Footer />
 
@@ -111,7 +134,7 @@ export default function App() {
             setErrorOpen(false);
           });
         }}
-        error={error()}
+        error={error}
       />
 
       <DeleteModal

@@ -1,19 +1,21 @@
-use crate::reader::{Cluster, Reader, THREADS};
+use crate::api::{fetch_messages, Take};
+use crate::consts::{DOWNLOAD_THREADS, UPLOAD_THREADS};
+use crate::errors::{DownloadError, UploadError};
+use crate::reader::{Cluster, Reader};
+use crate::writer::{self, Writer};
 use crate::{api, AppState};
 
 use std::collections::VecDeque;
-use std::fmt::Display;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::OnceLock;
 use std::time::Instant;
-use std::{env, fs, io, ptr};
+use std::{cmp, env, fs, ptr};
 
 use futures::stream::{self, StreamExt, TryStreamExt};
 use futures::{future, Future};
 use rand::Rng;
-use serde::ser::SerializeStruct;
-use serde::{Deserialize, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 use tokio::sync::{mpsc, oneshot};
 
@@ -39,6 +41,56 @@ fn path() -> &'static str {
     })
 }
 
+fn download_path() -> &'static str {
+    static PATH: OnceLock<String> = OnceLock::new();
+    PATH.get_or_init(|| match env::consts::OS {
+        "linux" => format!("{}/Downloads", env::var("HOME").expect("HOME not set")),
+        "windows" => format!(
+            "{}/Downloads",
+            env::var("USERPROFILE").expect("USERPROFILE not set")
+        ),
+        "macos" => format!("{}/Downloads", env::var("HOME").expect("HOME not set")),
+        _ => panic!("unsupported OS"),
+    })
+}
+
+fn download_target(path: &str) -> String {
+    let filename = match env::consts::OS {
+        "linux" => format!(
+            "{}/{}",
+            download_path(),
+            path.split('/').last().expect("failed to get filename")
+        ),
+        "windows" => format!(
+            "{}\\{}",
+            download_path(),
+            path.split('\\').last().expect("failed to get filename")
+        ),
+        "macos" => format!(
+            "{}/{}",
+            download_path(),
+            path.split('/').last().expect("failed to get filename")
+        ),
+        _ => panic!("unsupported OS"),
+    };
+
+    let (base, ext) = match filename.rsplit_once('.') {
+        Some((base, ext)) => (base, ".".to_owned() + ext),
+        None => (filename.as_str(), String::new()),
+    };
+
+    if Path::new(&filename).exists() {
+        let mut i = 1;
+        while Path::new(&format!("{} ({}){}", base, i, ext)).exists() {
+            i += 1;
+        }
+
+        format!("{} ({}){}", base, i, ext)
+    } else {
+        filename
+    }
+}
+
 pub trait Flatten<T, E1, E2>
 where
     Self: Future<Output = Result<Result<T, E1>, E2>>,
@@ -56,96 +108,6 @@ where
             Ok(Ok(result)) => Ok(result),
             Ok(Err(err)) => Err(err),
             Err(_) => Err(E::default()),
-        }
-    }
-}
-
-#[derive(Debug)]
-pub enum UploadError {
-    Io(io::Error),
-    Reqwest(reqwest::Error),
-    Unauthorized, // 401
-    Forbidden,    // 403
-    NotFound,     // 404
-    Unknown((u16, String)),
-    JoinError,
-}
-
-impl From<reqwest::Error> for UploadError {
-    fn from(value: reqwest::Error) -> Self {
-        Self::Reqwest(value)
-    }
-}
-
-impl Serialize for UploadError {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let mut state = serializer.serialize_struct("UploadError", 2)?;
-        match *self {
-            UploadError::Io(ref err) => {
-                state.serialize_field("type", "Io")?;
-                state.serialize_field("message", &err.to_string())?;
-            }
-            UploadError::Reqwest(ref err) => 'reqwest: {
-                state.serialize_field("type", "Reqwest")?;
-                if err.is_connect() {
-                    state.serialize_field("message", "Could not open a connection. Check your internet connection and try again.")?;
-                    break 'reqwest;
-                }
-
-                if err.is_timeout() {
-                    state.serialize_field(
-                        "message",
-                        "Connection timed out. Check your internet connection and try again.",
-                    )?;
-                    break 'reqwest;
-                }
-
-                state.serialize_field("message", &err.to_string())?;
-            }
-            UploadError::Unauthorized => {
-                state.serialize_field("type", "Unauthorized")?;
-                state.serialize_field("message", "")?;
-            }
-            UploadError::Forbidden => {
-                state.serialize_field("type", "Forbidden")?;
-                state.serialize_field("message", "")?;
-            }
-            UploadError::NotFound => {
-                state.serialize_field("type", "NotFound")?;
-                state.serialize_field("message", "")?;
-            }
-            UploadError::Unknown((code, ref message)) => {
-                state.serialize_field("type", "")?;
-                state.serialize_field("message", &format!("{} {}", code, message))?;
-            }
-            UploadError::JoinError => {
-                state.serialize_field("type", "JoinError")?;
-                state.serialize_field("message", "")?;
-            }
-        }
-        state.end()
-    }
-}
-
-impl Default for UploadError {
-    fn default() -> Self {
-        Self::JoinError
-    }
-}
-
-impl Display for UploadError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Io(err) => write!(f, "Io: {}", err),
-            Self::Reqwest(err) => write!(f, "Reqwest: {}", err),
-            Self::Unauthorized => write!(f, "Unauthorized"),
-            Self::Forbidden => write!(f, "Forbidden"),
-            Self::NotFound => write!(f, "Not Found"),
-            Self::Unknown((status, message)) => write!(f, "Unknown: {} - {}", status, message),
-            Self::JoinError => write!(f, "Join Error"),
         }
     }
 }
@@ -184,6 +146,14 @@ impl Job {
         }
     }
 
+    pub fn is_download_extendable(&self) -> bool {
+        match self {
+            Self::Idle => true,
+            Self::Upload { .. } => false,
+            Self::Download { .. } => true,
+        }
+    }
+
     pub fn take(&mut self) -> Self {
         std::mem::replace(self, Self::Idle)
     }
@@ -193,7 +163,8 @@ impl Job {
 pub struct RtState {
     pub this: *const AppState,
     pub app_handle: *const AppHandle,
-    pub queue: VecDeque<String>,
+    pub upload_queue: VecDeque<String>,
+    pub download_queue: VecDeque<u32>,
     pub job: Job,
 }
 
@@ -202,7 +173,8 @@ impl Default for RtState {
         Self {
             this: ptr::null(),
             app_handle: ptr::null(),
-            queue: VecDeque::new(),
+            upload_queue: VecDeque::new(),
+            download_queue: VecDeque::new(),
             job: Job::default(),
         }
     }
@@ -318,7 +290,7 @@ impl State {
         id
     }
 
-    pub fn extend_queue(&mut self, files: Vec<String>) {
+    pub fn extend_upload_queue(&mut self, files: Vec<String>) {
         if !self.rt.job.is_upload_extendable() {
             log::warn!("Not uploading, ignoring files");
             return;
@@ -362,17 +334,17 @@ impl State {
 
         log::info!("Extending the queue with {} files", queue.len());
         self.rt
-            .queue
+            .upload_queue
             .extend(queue.into_iter().map(|(file, _)| file));
 
         if self.rt.job == Job::Idle {
-            log::info!("Starting uploading {} files", self.rt.queue.len());
+            log::info!("Starting uploading {} files", self.rt.upload_queue.len());
             self.upload();
         }
     }
 
     fn upload(&mut self) {
-        let file = match self.rt.queue.pop_front() {
+        let file = match self.rt.upload_queue.pop_front() {
             Some(file) => file,
             None => {
                 log::info!("No more files to upload, stopping");
@@ -408,7 +380,7 @@ impl State {
                     .expect("failed to emit fileError");
 
                 self.rt.job = Job::Idle;
-                self.rt.queue.clear();
+                self.rt.upload_queue.clear();
                 return;
             }
         };
@@ -421,7 +393,7 @@ impl State {
         // Upload details, current cluster, finish sender
         type OneShot = (Vec<api::UploadDetailsInner>, Cluster, mpsc::Sender<Sender>);
 
-        let (tx, mut rx) = mpsc::channel::<Sender>(THREADS);
+        let (tx, mut rx) = mpsc::channel::<Sender>(UPLOAD_THREADS);
 
         let mut senders = Vec::with_capacity(clusters);
         let mut receivers = Vec::with_capacity(clusters);
@@ -439,27 +411,29 @@ impl State {
         let channel2 = channel.clone();
 
         let stream = stream::iter(receivers);
-        let uploaders = stream.map(Ok).try_for_each_concurrent(THREADS, move |rx| {
-            let token2 = Arc::clone(&token2);
-            let channel2 = Arc::clone(&channel2);
+        let uploaders = stream
+            .map(Ok)
+            .try_for_each_concurrent(UPLOAD_THREADS, move |rx| {
+                let token2 = Arc::clone(&token2);
+                let channel2 = Arc::clone(&channel2);
 
-            async move {
-                let (details, cluster, sender) = match rx.await {
-                    Ok(result) => result,
-                    Err(_) => return Ok(()), // TODO: comment why returning Ok(()) is actually ok
-                };
+                async move {
+                    let (details, cluster, sender) = match rx.await {
+                        Ok(result) => result,
+                        Err(_) => return Ok(()), // TODO: comment why returning Ok(()) is actually ok
+                    };
 
-                let index = cluster.index as usize;
-                api::upload(&details, cluster).await?;
+                    let index = cluster.index as usize;
+                    api::upload(&details, cluster).await?;
 
-                let id = api::finalize(&token2, &channel2, &details).await?;
-                sender
-                    .send((id, index))
-                    .await
-                    .expect("failed to send finish signal");
-                Ok::<(), UploadError>(())
-            }
-        });
+                    let id = api::finalize(&token2, &channel2, &details).await?;
+                    sender
+                        .send((id, index))
+                        .await
+                        .expect("failed to send finish signal");
+                    Ok::<(), UploadError>(())
+                }
+            });
 
         let futures = tokio::spawn(async move {
             let mut ids = vec![0; clusters];
@@ -519,7 +493,7 @@ impl State {
                         .emit_all("upload_error", &err)
                         .expect("failed to emit upload error");
 
-                    state.rt.queue.clear();
+                    state.rt.upload_queue.clear();
                     state.rt.job = Job::Idle;
 
                     return;
@@ -555,6 +529,209 @@ impl State {
         });
     }
 
+    pub fn extend_download_queue(&mut self, files: Vec<u32>) {
+        if !self.rt.job.is_download_extendable() {
+            log::warn!("Not downloading, ignoring files");
+            return;
+        }
+
+        let mut queue = Vec::with_capacity(files.len());
+        let handle = unsafe { self.rt.app_handle.as_ref().unwrap() };
+
+        for id in files {
+            if let Some(file) = self.files.iter().find(|file| file.id == id) {
+                queue.push(file.id);
+            }
+        }
+
+        if queue.is_empty() {
+            log::warn!("No files to download");
+            return;
+        }
+
+        handle
+            .emit_all("extend_download_queue", &queue)
+            .expect("failed to emit addFiles");
+
+        log::info!("Extending the queue with {} files", queue.len());
+        self.rt.download_queue.extend(queue);
+
+        if self.rt.job == Job::Idle {
+            log::info!(
+                "Starting downloading {} files",
+                self.rt.download_queue.len()
+            );
+            self.download();
+        }
+    }
+
+    fn download(&mut self) {
+        let id = match self.rt.download_queue.pop_front() {
+            Some(id) => id,
+            None => {
+                log::info!("No more files to download, stopping");
+
+                self.rt.job = Job::Idle;
+                return;
+            }
+        };
+
+        log::info!("Attempting to download file: {}", id);
+        let handle = unsafe { self.rt.app_handle.as_ref().unwrap() };
+        let file = match self.files.iter().find(|file| file.id == id) {
+            Some(file) => file,
+            None => {
+                log::error!("File not found: {}", id);
+                handle
+                    .emit_all("download_error", &DownloadError::NotFoundLocal)
+                    .expect("failed to emit fileError");
+
+                self.rt.job = Job::Idle;
+                self.rt.download_queue.clear();
+                return;
+            }
+        };
+
+        let (cancel_tx, cancel_rx) = oneshot::channel::<()>();
+        let (tx, mut rx) = mpsc::channel::<usize>(10);
+
+        self.rt.job = Job::Download { cancel_tx };
+
+        tokio::spawn(async move {
+            let mut bytes = 0;
+            while let Some(read) = rx.recv().await {
+                bytes += read;
+                handle
+                    .emit_all("upload_progress", bytes)
+                    .expect("failed to emit uploadProgress");
+            }
+        });
+
+        let target = download_target(&file.path);
+        let token = Arc::new(self.token.clone());
+        let channel = Arc::new(self.channel_id.clone());
+        let cluster_count = file.download_ids.len();
+        let mut ids = file.download_ids.clone();
+
+        let writer = match Writer::new(&target, self.encryption_key, tx) {
+            Ok(writer) => writer,
+            Err(err) => {
+                log::error!("failed to open file: {}", target);
+                handle
+                    .emit_all("download_error", &DownloadError::Io(err))
+                    .expect("failed to emit fileError");
+
+                self.rt.job = Job::Idle;
+                self.rt.download_queue.clear();
+                return;
+            }
+        };
+
+        log::info!("Downloading file: {}", target);
+        let mut senders = Vec::with_capacity(ids.len());
+        let mut receivers = Vec::with_capacity(ids.len());
+
+        for _ in 0..ids.len() {
+            let (sender, receiver) = oneshot::channel::<writer::Cluster>();
+            senders.push(sender);
+            receivers.push(receiver);
+        }
+
+        let stream = stream::iter(receivers);
+        let downloaders =
+            stream
+                .map(Ok)
+                .try_for_each_concurrent(DOWNLOAD_THREADS, move |rx| async move {
+                    let mut cluster = match rx.await {
+                        Ok(cluster) => cluster,
+                        Err(_) => return Ok(()), // TODO: comment why returning Ok(()) is actually ok
+                    };
+
+                    cluster.download().await
+                });
+
+        let future = tokio::spawn(async move {
+            let message_count = cmp::min(ids.len() * 2, 100);
+            let mut set = ids.clone();
+
+            'outer: while let Some(id) = ids.first() {
+                let mut messages = match fetch_messages(&token, &channel, *id, message_count).await
+                {
+                    Ok(messages) => messages,
+                    Err(err) => {
+                        log::error!("failed to fetch messages: {}", err);
+                        return Err(err);
+                    }
+                };
+
+                for message in messages.iter_mut() {
+                    let message_id = message
+                        .id
+                        .parse::<u64>()
+                        .expect("failed to parse message ID");
+
+                    if let Some((idx, id)) = set
+                        .iter_mut()
+                        .enumerate()
+                        .find(|(_, id)| **id == message_id)
+                    {
+                        ids.retain(|id| *id != message_id);
+                        let attachments = message.attachments.take();
+                        let cluster = writer.cluster(idx, attachments);
+                        *id = 0;
+
+                        let sender = senders.pop().unwrap();
+                        if sender.send(cluster).is_err() {
+                            break 'outer;
+                        }
+                    }
+                }
+            }
+
+            Ok(())
+        });
+
+        let state = unsafe { &*self.rt.this };
+        tokio::spawn(async move {
+            let now = Instant::now();
+
+            let futures = future::try_join(downloaders, Flatten::flatten(future));
+            let futures = select! {
+                futures = futures => futures,
+                _ = cancel_rx => {
+                    log::debug!("Download canceled");
+                    return;
+                }
+            };
+
+            let took = now.elapsed().as_secs_f64();
+            log::info!("Downloaded {} cluster(s) in {:.2}s", cluster_count, took);
+
+            let mut state = state.write().await;
+            let handle = unsafe { state.rt.app_handle.as_ref().unwrap() };
+            match futures {
+                Ok((_, _)) => {
+                    handle
+                        .emit_all("file_downloaded", &target)
+                        .expect("failed to emit download");
+
+                    state.rt.download_queue.clear();
+                    state.rt.job = Job::Idle;
+                }
+                Err(err) => {
+                    log::error!("Failed to download file, reason: {}", err);
+
+                    handle
+                        .emit_all("download_error", &err)
+                        .expect("failed to emit download error");
+
+                    state.rt.download_queue.clear();
+                    state.rt.job = Job::Idle;
+                }
+            }
+        });
+    }
+
     pub async fn cancel(&mut self) {
         match self.rt.job.take() {
             Job::Idle => {
@@ -564,13 +741,15 @@ impl State {
             Job::Upload { cancel_tx } => {
                 log::info!("Canceling upload job");
 
-                self.rt.queue.clear();
+                self.rt.upload_queue.clear();
                 if cancel_tx.send(()).is_err() {
                     log::error!("failed to send cancel signal");
                 }
             }
             Job::Download { cancel_tx } => {
                 log::info!("Canceling download job");
+
+                self.rt.download_queue.clear();
                 if cancel_tx.send(()).is_err() {
                     log::error!("failed to send cancel signal");
                 }
@@ -579,7 +758,7 @@ impl State {
 
         let handle = unsafe { self.rt.app_handle.as_ref().unwrap() };
         handle
-            .emit_all("upload_canceled", ())
+            .emit_all("job_canceled", ())
             .expect("failed to emit uploadCanceled");
     }
 }

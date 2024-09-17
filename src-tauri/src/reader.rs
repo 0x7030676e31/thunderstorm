@@ -1,3 +1,5 @@
+use crate::consts::*;
+
 use std::cell::UnsafeCell;
 use std::cmp;
 use std::fs::File;
@@ -7,17 +9,6 @@ use std::sync::{Arc, Mutex};
 use aes_gcm::aead::AeadMutInPlace;
 use aes_gcm::{Aes256Gcm, Key, KeyInit, Nonce};
 use tokio::sync::mpsc;
-
-pub const SLICE_SIZE: u64 = 1024 * 1024 * 25;
-pub const BUFFER_SIZE: u64 = 1024 * 1024;
-pub const CLUSTER_CAP: u64 = 10;
-pub const AES_OVERHEAD: u64 = 16;
-pub const THREADS: usize = 4;
-
-const CLUSTER_SIZE: u64 = SLICE_SIZE * CLUSTER_CAP; // Total size of all attachments per message
-const RAW_BUFFER_SIZE: u64 = BUFFER_SIZE - AES_OVERHEAD; // IO buffer size
-const BUFFERS_PER_SLICE: u64 = (SLICE_SIZE + BUFFER_SIZE - 1) / BUFFER_SIZE; // Number of buffers per slice (rounded up)
-const BYTES_PER_SLICE: u64 = SLICE_SIZE - BUFFERS_PER_SLICE * AES_OVERHEAD; // Number of IO bytes per slice (excluding encryption overhead)
 
 #[derive(Debug)]
 pub struct Reader {

@@ -1,4 +1,6 @@
-use crate::AppState;
+use std::env;
+
+use crate::{levenshtein::levenshtein, AppState};
 
 use serde::{Deserialize, Serialize};
 use tauri::{Manager, State};
@@ -32,13 +34,15 @@ pub async fn get_settings(state: State<'_, AppState>) -> Result<String, ()> {
 pub async fn upload_files(state: State<'_, AppState>, files: Vec<String>) -> Result<(), ()> {
     let mut state = state.write().await;
     log::debug!("Adding files: {:?}", files);
-    state.extend_queue(files);
+    state.extend_upload_queue(files);
     Ok(())
 }
 
 #[tauri::command]
 pub async fn download_files(_state: State<'_, AppState>, files: Vec<u32>) -> Result<(), ()> {
+    let mut state = _state.write().await;
     log::debug!("Downloading files: {:?}", files);
+    state.extend_download_queue(files);
     Ok(())
 }
 
@@ -99,4 +103,27 @@ pub async fn cancel(state: State<'_, AppState>) -> Result<(), ()> {
     log::debug!("Cancelling current action");
     state.cancel().await;
     Ok(())
+}
+
+#[tauri::command]
+pub async fn query(state: State<'_, AppState>, query: String) -> Result<Vec<u32>, ()> {
+    let state = state.read().await;
+    let query = query.to_lowercase();
+    let split = if env::consts::OS == "windows" {
+        '\\'
+    } else {
+        '/'
+    };
+
+    let mut results = state
+        .files
+        .iter()
+        .map(|file| {
+            let name = file.path.split(split).last().unwrap().to_lowercase();
+            (file.id, levenshtein(&query, &name))
+        })
+        .collect::<Vec<(u32, f64)>>();
+
+    results.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+    Ok(results.iter().map(|(id, _)| *id).collect())
 }

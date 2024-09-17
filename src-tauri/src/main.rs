@@ -1,4 +1,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+#![feature(let_chains)]
 
 use std::env;
 use std::sync::Arc;
@@ -6,9 +7,13 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 mod api;
+mod consts;
+mod errors;
 mod invokes;
+mod levenshtein;
 mod reader;
 mod state;
+mod writer;
 
 type AppState = Arc<RwLock<state::State>>;
 
@@ -51,6 +56,7 @@ async fn main() {
             invokes::upload_files,
             invokes::set_settings,
             invokes::cancel,
+            invokes::query,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

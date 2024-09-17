@@ -1,12 +1,13 @@
-use crate::reader::{Cluster, SLICE_SIZE};
-use crate::state::UploadError;
+use crate::errors::UploadError;
+use crate::reader::Cluster;
+use crate::{consts::SLICE_SIZE, errors::DownloadError};
 
 use std::cmp;
 use std::sync::Arc;
 use std::time::Duration;
 
 use futures::{future, stream};
-use reqwest::{Client, StatusCode};
+use reqwest::{Client, Response, StatusCode};
 use serde::Deserialize;
 use tokio::time;
 
@@ -70,6 +71,10 @@ pub async fn preupload<'a>(
             StatusCode::NOT_FOUND => return Err(UploadError::NotFound),
             StatusCode::TOO_MANY_REQUESTS => {
                 let rate_limit: RateLimit = req.json().await.map_err(UploadError::from)?;
+                log::warn!(
+                    "Resource preupload rate limited, retrying in {} seconds",
+                    rate_limit.retry_after
+                );
 
                 time::sleep(time::Duration::from_secs_f32(rate_limit.retry_after)).await;
             }
@@ -88,7 +93,6 @@ pub async fn upload(
     mut cluster: Cluster,
 ) -> Result<(), UploadError> {
     let client = Client::builder()
-        // .read_timeout(READ_TIMEOUT)
         .connect_timeout(CONNECT_TIMEOUT)
         .build()
         .map_err(UploadError::from)?;
@@ -161,6 +165,10 @@ pub async fn finalize(
             StatusCode::NOT_FOUND => return Err(UploadError::NotFound),
             StatusCode::TOO_MANY_REQUESTS => {
                 let rate_limit: RateLimit = req.json().await.map_err(UploadError::from)?;
+                log::warn!(
+                    "Resource upload rate limited, retrying in {} seconds",
+                    rate_limit.retry_after
+                );
 
                 time::sleep(time::Duration::from_secs_f32(rate_limit.retry_after)).await;
             }
@@ -171,6 +179,119 @@ pub async fn finalize(
                 return Ok(message.id.parse().expect("Failed to parse message ID"));
             }
             _ => return Err(UploadError::Unknown((status.as_u16(), status.to_string()))),
+        }
+    }
+}
+
+#[derive(Deserialize)]
+pub struct Attachment {
+    pub url: String,
+}
+
+pub trait Take {
+    fn take(&mut self) -> Vec<String>;
+}
+
+impl Take for Vec<Attachment> {
+    fn take(&mut self) -> Vec<String> {
+        self.drain(..).map(|attachment| attachment.url).collect()
+    }
+}
+
+#[derive(Deserialize)]
+pub struct MessageFull {
+    pub attachments: Vec<Attachment>,
+    pub id: String,
+}
+
+pub async fn fetch_messages(
+    token: &Arc<String>,
+    channel: &Arc<String>,
+    id: u64,
+    limit: usize,
+) -> Result<Vec<MessageFull>, DownloadError> {
+    let client = Client::builder()
+        .read_timeout(READ_TIMEOUT)
+        .connect_timeout(CONNECT_TIMEOUT)
+        .build()
+        .map_err(DownloadError::from)?;
+
+    let url = format!(
+        "https://discord.com/api/v9/channels/{}/messages?limit={}&around={}",
+        channel, limit, id
+    );
+
+    loop {
+        let req = client
+            .get(&url)
+            .header("Authorization", token.as_str())
+            .header("Content-Type", "application/json")
+            .send()
+            .await
+            .map_err(DownloadError::from)?;
+
+        let status = req.status();
+        match status {
+            StatusCode::UNAUTHORIZED => return Err(DownloadError::Unauthorized),
+            StatusCode::FORBIDDEN => return Err(DownloadError::Forbidden),
+            StatusCode::NOT_FOUND => return Err(DownloadError::NotFound),
+            StatusCode::TOO_MANY_REQUESTS => {
+                let rate_limit: RateLimit = req.json().await.map_err(DownloadError::from)?;
+                log::warn!(
+                    "Resource metadata download rate limited, retrying in {} seconds",
+                    rate_limit.retry_after
+                );
+
+                time::sleep(time::Duration::from_secs_f32(rate_limit.retry_after)).await;
+            }
+            StatusCode::OK => {
+                let messages: Vec<MessageFull> = req.json().await.map_err(DownloadError::from)?;
+
+                return Ok(messages);
+            }
+            _ => {
+                return Err(DownloadError::Unknown((
+                    status.as_u16(),
+                    status.to_string(),
+                )))
+            }
+        }
+    }
+}
+
+pub async fn download(url: String) -> Result<Response, DownloadError> {
+    let client = Client::builder()
+        .read_timeout(READ_TIMEOUT)
+        .connect_timeout(CONNECT_TIMEOUT)
+        .build()
+        .map_err(DownloadError::from)?;
+
+    loop {
+        let req = client.get(&url).send().await.map_err(DownloadError::from)?;
+
+        let status = req.status();
+        match status {
+            StatusCode::UNAUTHORIZED => return Err(DownloadError::Unauthorized),
+            StatusCode::FORBIDDEN => return Err(DownloadError::Forbidden),
+            StatusCode::NOT_FOUND => return Err(DownloadError::NotFound),
+            StatusCode::TOO_MANY_REQUESTS => {
+                let rate_limit: RateLimit = req.json().await.map_err(DownloadError::from)?;
+                log::warn!(
+                    "Resource download rate limited, retrying in {} seconds",
+                    rate_limit.retry_after
+                );
+
+                time::sleep(time::Duration::from_secs_f32(rate_limit.retry_after)).await;
+            }
+            StatusCode::OK => {
+                return Ok(req);
+            }
+            _ => {
+                return Err(DownloadError::Unknown((
+                    status.as_u16(),
+                    status.to_string(),
+                )))
+            }
         }
     }
 }

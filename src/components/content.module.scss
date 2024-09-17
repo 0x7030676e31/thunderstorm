@@ -1,17 +1,57 @@
 @import "../palette.scss";
 
+$scrollbar-width: 14px;
+$scrollbar-color-1: transparentize($mauve, 0.5);
+$scrollbar-color-2: $mantle;
+
 .content {
   width: 100%;
   flex-grow: 1;
-  overflow: auto;
   position: relative;
+  overflow-y: auto;
+  
+  /* Firefox */
+  scrollbar-width: $scrollbar-width;
+  scrollbar-color: $scrollbar-color-1 $scrollbar-color-2;
+
+  /* Chrome, Edge, and Safari */
+  &::-webkit-scrollbar {
+    width: $scrollbar-width;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: $scrollbar-color-2;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background-color: $scrollbar-color-1;
+    border-radius: 10px;
+    border: 4px solid $scrollbar-color-2;
+  }
 }
 
 .files {
   display: grid;
   grid-template-columns: auto 1fr auto auto;
-  width: 100%;
-  overflow: auto;
+
+  /* Firefox */
+  scrollbar-width: $scrollbar-width;
+  scrollbar-color: $scrollbar-color-1 $scrollbar-color-2;
+
+  /* Chrome, Edge, and Safari */
+  &::-webkit-scrollbar {
+    width: $scrollbar-width;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: $scrollbar-color-2;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background-color: $scrollbar-color-1;
+    border-radius: 10px;
+    border: 4px solid $scrollbar-color-2;
+  }
 }
 
 .file {
@@ -51,10 +91,6 @@
     background-color: mix($mantle, $mauve, 20%);
     color: $mantle;
   }
-
-  // &.selected:hover > div {
-  //   background-color: mix($mauve, $base, 50%);
-  // }
 }
 
 .icon {

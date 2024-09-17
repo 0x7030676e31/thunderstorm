@@ -20,6 +20,7 @@ type Props = {
   setSelected: Setter<number[]>;
   selected: Accessor<number[]>;
   files: Accessor<IFile[]>;
+  order: Accessor<number[] | null>;
 }
 
 const fmt = new Intl.DateTimeFormat(undefined, {
@@ -32,15 +33,14 @@ const fmt = new Intl.DateTimeFormat(undefined, {
   second: "numeric",
 });
 
-export default function Content({ setSelected, selected, files }: Props) {
+export default function Content({ setSelected, selected, files, order }: Props) {
   const [hovering, setHovering] = createSignal(false);
 
-  const filelist = () => structuredClone(files()).reverse();
+  const filelist = () => order() === null ? structuredClone(files()).reverse() : order()!.map(id => files().find(file => file.id === id)!);
 
   let unlistenDrop: UnlistenFn | null = null;
   let unlistenDropHover: UnlistenFn | null = null;
   let unlistenDropCancelled: UnlistenFn | null = null;
-
 
   onMount(async () => {
     unlistenDrop = await listen("tauri://file-drop", async data => {
