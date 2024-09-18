@@ -104,6 +104,7 @@ pub enum DownloadError {
     Unknown((u16, String)),
     NotFoundLocal,
     JoinError,
+    ChecksumMismatch(u32, u32),
     EncryptionError(String),
 }
 
@@ -177,6 +178,13 @@ impl Serialize for DownloadError {
                 state.serialize_field("type", "JoinError")?;
                 state.serialize_field("message", "")?;
             }
+            DownloadError::ChecksumMismatch(expected, actual) => {
+                state.serialize_field("type", "ChecksumMismatch")?;
+                state.serialize_field(
+                    "message",
+                    &format!("Expected: {}, Actual: {}", expected, actual),
+                )?;
+            }
             DownloadError::EncryptionError(ref message) => {
                 state.serialize_field("type", "EncryptionError")?;
                 state.serialize_field("message", message)?;
@@ -203,6 +211,13 @@ impl Display for DownloadError {
             Self::Unknown((status, message)) => write!(f, "Unknown: {} - {}", status, message),
             Self::NotFoundLocal => write!(f, "Not Found Locally"),
             Self::JoinError => write!(f, "Join Error"),
+            Self::ChecksumMismatch(expected, actual) => {
+                write!(
+                    f,
+                    "Checksum Mismatch: Expected: {}, Actual: {}",
+                    expected, actual
+                )
+            }
             Self::EncryptionError(err) => write!(f, "Encryption Error: {}", err),
         }
     }

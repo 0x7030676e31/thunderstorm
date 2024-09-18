@@ -13,6 +13,7 @@ use std::{cmp, io};
 
 use aes_gcm::aead::AeadMutInPlace;
 use aes_gcm::{Aes256Gcm, Key, KeyInit, Nonce};
+use crc32fast::Hasher;
 use futures::{future, StreamExt};
 use tokio::sync::{mpsc, Mutex};
 
@@ -21,12 +22,13 @@ struct Cipher(UnsafeCell<Aes256Gcm>);
 unsafe impl Send for Cipher {}
 unsafe impl Sync for Cipher {}
 
-// unsafe impl Send for Aes256Gcm {}
+type CrcSender = Option<mpsc::Sender<(u64, Hasher)>>;
 
 pub struct Writer {
     file: Arc<Mutex<File>>,
     cipher: Arc<Cipher>,
-    tx: mpsc::Sender<usize>,
+    write_tx: mpsc::Sender<usize>,
+    crc_tx: CrcSender,
 }
 
 unsafe impl Send for Writer {}
@@ -36,7 +38,8 @@ impl Writer {
     pub fn new<T: AsRef<Path>>(
         path: T,
         key: &[u8; 32],
-        sender: mpsc::Sender<usize>,
+        write_sender: mpsc::Sender<usize>,
+        crc_sender: CrcSender,
     ) -> io::Result<Self> {
         let key = Key::<Aes256Gcm>::from_slice(key);
         let cipher = Aes256Gcm::new(key);
@@ -45,7 +48,8 @@ impl Writer {
             file: Arc::new(Mutex::new(File::create(path)?)),
             #[allow(clippy::arc_with_non_send_sync)]
             cipher: Arc::new(Cipher(UnsafeCell::new(cipher))),
-            tx: sender,
+            write_tx: write_sender,
+            crc_tx: crc_sender,
         })
     }
 
@@ -55,7 +59,8 @@ impl Writer {
             cipher: self.cipher.clone(),
             index,
             urls: download_urls,
-            sender: self.tx.clone(),
+            write_sender: self.write_tx.clone(),
+            crc_sender: self.crc_tx.clone(),
         }
     }
 }
@@ -65,7 +70,8 @@ pub struct Cluster {
     cipher: Arc<Cipher>,
     index: usize,
     urls: Vec<String>,
-    sender: mpsc::Sender<usize>,
+    write_sender: mpsc::Sender<usize>,
+    crc_sender: CrcSender,
 }
 
 unsafe impl Send for Cluster {}
@@ -80,7 +86,8 @@ impl Cluster {
                 url.clone(),
                 self.index as u64,
                 index as u64,
-                self.sender.clone(),
+                self.write_sender.clone(),
+                self.crc_sender.clone(),
             )
         });
 
@@ -98,7 +105,8 @@ async fn download(
     url: String,
     cluster: u64,
     slice: u64,
-    tx: mpsc::Sender<usize>,
+    write_tx: mpsc::Sender<usize>,
+    crc_tx: CrcSender,
 ) -> Result<(), DownloadError> {
     let slice = cluster * CLUSTER_CAP + slice;
 
@@ -109,6 +117,8 @@ async fn download(
 
     let mut stream = api::download(url).await?.bytes_stream();
     let cipher = unsafe { &mut *cipher.0.get() };
+
+    let mut hasher = crc_tx.is_some().then(|| Hasher::new());
 
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(DownloadError::from)?;
@@ -136,7 +146,11 @@ async fn download(
             file.write_all(&buffer).map_err(DownloadError::from)?;
             drop(file);
 
-            if let Err(err) = tx.send(buffer.len()).await {
+            if let Some(hasher) = &mut hasher {
+                hasher.update(&buffer);
+            }
+
+            if let Err(err) = write_tx.send(buffer.len()).await {
                 log::error!("Failed to send buffer size: {:?}", err);
             }
 
@@ -160,11 +174,21 @@ async fn download(
             .map_err(DownloadError::from)?;
 
         file.write_all(&buffer).map_err(DownloadError::from)?;
-        if let Err(err) = tx.send(buffer.len()).await {
+        if let Err(err) = write_tx.send(buffer.len()).await {
             log::error!("Failed to send buffer size: {:?}", err);
         }
 
         drop(file);
+
+        if let Some(hasher) = &mut hasher {
+            hasher.update(&buffer);
+        }
+    }
+
+    if let (Some(hasher), Some(crc_tx)) = (hasher, crc_tx) {
+        if let Err(err) = crc_tx.send((slice, hasher)).await {
+            log::error!("Failed to send crc: {:?}", err);
+        }
     }
 
     Ok(())

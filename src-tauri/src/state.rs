@@ -1,5 +1,5 @@
 use crate::api::{fetch_messages, Take};
-use crate::consts::{DOWNLOAD_THREADS, UPLOAD_THREADS};
+use crate::consts::{BYTES_PER_SLICE, DOWNLOAD_THREADS, UPLOAD_THREADS};
 use crate::errors::{DownloadError, UploadError};
 use crate::io::reader::{Cluster, Reader};
 use crate::io::writer::{self, Writer};
@@ -12,6 +12,7 @@ use std::sync::Arc;
 use std::time::Instant;
 use std::{cmp, fs, ptr};
 
+use crc32fast::Hasher;
 use futures::future;
 use futures::stream::{self, StreamExt, TryStreamExt};
 use rand::Rng;
@@ -286,8 +287,29 @@ impl State {
             }
         });
 
+        let (crc_tx, mut crc_rx) = mpsc::channel::<(u64, Hasher)>(4);
+
+        let crc_handle = tokio::spawn(async move {
+            let mut hashers = Vec::new();
+            while let Some((idx, hasher)) = crc_rx.recv().await {
+                let idx = idx as usize;
+                if hashers.len() <= idx {
+                    hashers.resize(idx + 1, unsafe { std::mem::zeroed() });
+                }
+
+                hashers.insert(idx, hasher);
+            }
+
+            let mut hasher = Hasher::new();
+            for other in hashers {
+                hasher.combine(&other);
+            }
+
+            Ok(hasher.finalize())
+        });
+
         let key = self.aes_key();
-        let mut reader = match Reader::new(&file, &key, tx, None) {
+        let mut reader = match Reader::new(&file, &key, tx, crc_tx) {
             Ok(reader) => reader,
             Err(err) => {
                 log::error!("failed to open file: {}", file);
@@ -385,10 +407,11 @@ impl State {
         tokio::spawn(async move {
             let now = Instant::now();
 
-            let futures = future::try_join3(
+            let futures = future::try_join4(
                 Flatten::flatten(futures),
                 uploaders,
                 Flatten::flatten(preuploads),
+                Flatten::flatten(crc_handle),
             );
             let futures = select! {
                 futures = futures => futures,
@@ -400,8 +423,8 @@ impl State {
 
             let mut state = state.write().await;
             let handle = unsafe { state.rt.app_handle.as_ref().unwrap() };
-            let ids = match futures {
-                Ok((ids, _, _)) => ids,
+            let (ids, crc) = match futures {
+                Ok((ids, _, _, crc)) => (ids, crc),
                 Err(err) => {
                     log::error!("Failed to upload a file, reason: {}", err);
 
@@ -417,7 +440,12 @@ impl State {
             };
 
             let took = now.elapsed().as_secs_f64();
-            log::info!("Uploaded {} cluster(s) in {:.2}s", clusters, took);
+            log::info!(
+                "Uploaded {} cluster(s) in {:.2}s; crc32: {:x}",
+                clusters,
+                took,
+                crc,
+            );
 
             let timestamp = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -431,7 +459,7 @@ impl State {
                 download_ids: ids,
                 created_at: timestamp,
                 updated_at: timestamp,
-                crc32: 0,
+                crc32: crc,
                 encryption_key: key,
             };
 
@@ -532,7 +560,32 @@ impl State {
         let cluster_count = file.download_ids.len();
         let mut ids = file.download_ids.clone();
 
-        let writer = match Writer::new(&target, &file.encryption_key, tx) {
+        let (crc_tx, crc_rx) = self
+            .do_checksum
+            .then(|| mpsc::channel::<(u64, Hasher)>(4))
+            .map_or_else(|| (None, None), |(tx, rx)| (Some(tx), Some(rx)));
+
+        let slices = file.size / BYTES_PER_SLICE;
+        let crc_handle = tokio::spawn(async move {
+            let mut rx = match crc_rx {
+                Some(rx) => rx,
+                None => return Ok(None),
+            };
+
+            let mut hashers = vec![unsafe { std::mem::zeroed() }; slices as usize];
+            while let Some((idx, hasher)) = rx.recv().await {
+                hashers.insert(idx as usize, hasher);
+            }
+
+            let mut hasher = Hasher::new();
+            for other in hashers {
+                hasher.combine(&other);
+            }
+
+            Ok(Some(hasher.finalize()))
+        });
+
+        let writer = match Writer::new(&target, &file.encryption_key, tx, crc_tx) {
             Ok(writer) => writer,
             Err(err) => {
                 log::error!("failed to open file: {}", target);
@@ -614,7 +667,11 @@ impl State {
         tokio::spawn(async move {
             let now = Instant::now();
 
-            let futures = future::try_join(downloaders, Flatten::flatten(future));
+            let futures = future::try_join3(
+                downloaders,
+                Flatten::flatten(future),
+                Flatten::flatten(crc_handle),
+            );
             let futures = select! {
                 futures = futures => futures,
                 _ = cancel_rx => {
@@ -632,15 +689,8 @@ impl State {
 
             let mut state = state.write().await;
             let handle = unsafe { state.rt.app_handle.as_ref().unwrap() };
-            match futures {
-                Ok((_, _)) => {
-                    handle
-                        .emit_all("file_downloaded", &target)
-                        .expect("failed to emit file_downloaded");
-
-                    state.rt.download_queue.clear();
-                    state.rt.job = Job::Idle;
-                }
+            let crc = match futures {
+                Ok((_, _, crc)) => crc,
                 Err(err) => {
                     log::error!("Failed to download file, reason: {}", err);
 
@@ -653,7 +703,28 @@ impl State {
 
                     return;
                 }
+            };
+
+            if let Some(file) = state.files.iter().find(|file| file.id == id)
+                && crc.is_some_and(|crc| crc != file.crc32)
+            {
+                log::warn!("CRC32 mismatch: {:x} != {:x}", crc.unwrap(), file.crc32);
+                handle
+                    .emit_all(
+                        "download_error",
+                        &DownloadError::ChecksumMismatch(crc.unwrap(), file.crc32),
+                    )
+                    .expect("failed to emit download_error");
+
+                state.rt.download_queue.clear();
+                state.rt.job = Job::Idle;
+
+                return;
             }
+
+            handle
+                .emit_all("file_downloaded", &target)
+                .expect("failed to emit file_downloaded");
 
             if !state.rt.download_queue.is_empty() {
                 state.download();
