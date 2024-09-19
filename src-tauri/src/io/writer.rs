@@ -87,10 +87,10 @@ async fn download(
     crc_tx: CrcSender,
 ) -> Result<(), DownloadError> {
     let slice = cluster * CLUSTER_CAP + slice;
+    let mut position = slice * SLICE_SIZE;
+    log::debug!("Downloading slice {} at position {}", slice, position);
 
-    let mut position = slice * BYTES_PER_SLICE;
     let mut buffer = Vec::with_capacity(BUFFER_SIZE_U);
-
     let mut stream = api::download(url).await?.bytes_stream();
     let mut hasher = crc_tx.is_some().then(Hasher::new);
 
@@ -133,11 +133,11 @@ async fn download(
             .map_err(DownloadError::from)?;
 
         file.write_all(&buffer).map_err(DownloadError::from)?;
+        drop(file);
+
         if let Err(err) = write_tx.send(buffer.len()).await {
             log::error!("Failed to send buffer size: {:?}", err);
         }
-
-        drop(file);
 
         if let Some(hasher) = &mut hasher {
             hasher.update(&buffer);

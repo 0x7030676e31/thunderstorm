@@ -1,7 +1,7 @@
 use super::errors::DownloadError;
 use super::model::{Job, State};
 use crate::api::{self, Take};
-use crate::io::consts::{BYTES_PER_SLICE, DOWNLOAD_THREADS};
+use crate::io::consts::{BYTES_PER_SLICE, DOWNLOAD_THREADS, SLICE_SIZE};
 use crate::io::secure_writer::{SecureClusterW, SecureWriter};
 use crate::io::writer::{InsecureClusterW, InsecureWriter};
 use crate::utils::{download_target, Flatten};
@@ -326,7 +326,7 @@ impl State {
             .then(|| mpsc::channel::<(u64, Hasher)>(4))
             .map_or_else(|| (None, None), |(tx, rx)| (Some(tx), Some(rx)));
 
-        let slices = file.size / BYTES_PER_SLICE;
+        let slices = file.size / SLICE_SIZE;
         let crc_handle = tokio::spawn(async move {
             let mut rx = match crc_rx {
                 Some(rx) => rx,
