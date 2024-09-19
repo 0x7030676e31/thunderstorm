@@ -9,7 +9,7 @@ import {
   AiOutlineFileWord,
   AiOutlineFileZip
 } from "solid-icons/ai";
-
+import { BsFileEarmarkLock2Fill } from "solid-icons/bs";
 import { Accessor, For, Match, Setter, Show, Switch, createSignal, onCleanup, onMount } from "solid-js";
 import { UnlistenFn, listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api";
@@ -106,7 +106,7 @@ type FileProps = {
   onClick: () => void;
 };
 
-function File({ selected, onClick, path, size, created_at }: IFile & FileProps) {
+function File({ selected, onClick, path, size, created_at, encryption_key }: IFile & FileProps) {
   return (
     <div
       class={styles.file}
@@ -115,6 +115,7 @@ function File({ selected, onClick, path, size, created_at }: IFile & FileProps) 
     >
       <div class={styles.icon}>
         <FileIcon filename={filename(path)} />
+        {encryption_key !== null && <BsFileEarmarkLock2Fill class={styles.encrypted} />}
       </div>
       <div class={styles.name}>
         {filename(path)}

@@ -8,6 +8,7 @@ declare global {
     path: string;
     size: number;
     created_at: number;
+    encryption_key: null | number[];
   }
 
   interface ISettings {

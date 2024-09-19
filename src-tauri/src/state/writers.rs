@@ -3,6 +3,7 @@ use super::model::{Job, State};
 use crate::api::{self, Take};
 use crate::io::consts::{BYTES_PER_SLICE, DOWNLOAD_THREADS};
 use crate::io::secure_writer::{SecureClusterW, SecureWriter};
+use crate::io::writer::{InsecureClusterW, InsecureWriter};
 use crate::utils::{download_target, Flatten};
 
 use std::sync::Arc;
@@ -287,5 +288,206 @@ impl State {
         });
     }
 
-    fn download_insecure(&mut self, id: u32, cancel_rx: oneshot::Receiver<()>) {}
+    fn download_insecure(&mut self, id: u32, cancel_rx: oneshot::Receiver<()>) {
+        let handle = unsafe { self.rt.app_handle.as_ref().unwrap() };
+        let file = match self.files.iter().find(|file| file.id == id) {
+            Some(file) => file,
+            None => {
+                log::error!("File not found: {}", id);
+                handle
+                    .emit_all("download_error", &DownloadError::NotFoundLocal)
+                    .expect("failed to emit download_error");
+
+                self.rt.job = Job::Idle;
+                self.rt.download_queue.clear();
+                return;
+            }
+        };
+
+        let (tx, mut rx) = mpsc::channel::<usize>(10);
+        tokio::spawn(async move {
+            let mut bytes = 0;
+            while let Some(read) = rx.recv().await {
+                bytes += read;
+                handle
+                    .emit_all("download_progress", bytes)
+                    .expect("failed to emit download_progress");
+            }
+        });
+
+        let target = download_target(&file.path);
+        let token = Arc::new(self.token.clone());
+        let channel = Arc::new(self.channel_id.clone());
+        let cluster_count = file.download_ids.len();
+        let mut ids = file.download_ids.clone();
+
+        let (crc_tx, crc_rx) = self
+            .do_checksum
+            .then(|| mpsc::channel::<(u64, Hasher)>(4))
+            .map_or_else(|| (None, None), |(tx, rx)| (Some(tx), Some(rx)));
+
+        let slices = file.size / BYTES_PER_SLICE;
+        let crc_handle = tokio::spawn(async move {
+            let mut rx = match crc_rx {
+                Some(rx) => rx,
+                None => return Ok(None),
+            };
+
+            let mut hashers = vec![unsafe { std::mem::zeroed() }; slices as usize];
+            while let Some((idx, hasher)) = rx.recv().await {
+                hashers.insert(idx as usize, hasher);
+            }
+
+            let mut hasher = Hasher::new();
+            for other in hashers {
+                hasher.combine(&other);
+            }
+
+            Ok(Some(hasher.finalize()))
+        });
+
+        let writer = match InsecureWriter::new(&target, tx, crc_tx) {
+            Ok(writer) => writer,
+            Err(err) => {
+                log::error!("failed to open file: {}", target);
+                handle
+                    .emit_all("download_error", &DownloadError::Io(err))
+                    .expect("failed to emit download_error");
+
+                self.rt.job = Job::Idle;
+                self.rt.download_queue.clear();
+                return;
+            }
+        };
+
+        log::info!("Downloading file: {}", target);
+        let mut senders = Vec::with_capacity(ids.len());
+        let mut receivers = Vec::with_capacity(ids.len());
+
+        for _ in 0..ids.len() {
+            let (sender, receiver) = oneshot::channel::<InsecureClusterW>();
+            senders.push(sender);
+            receivers.push(receiver);
+        }
+
+        let stream = stream::iter(receivers);
+        let downloaders =
+            stream
+                .map(Ok)
+                .try_for_each_concurrent(DOWNLOAD_THREADS, move |rx| async move {
+                    let mut cluster = match rx.await {
+                        Ok(cluster) => cluster,
+                        Err(_) => return Ok(()), // TODO: comment why returning Ok(()) is actually ok
+                    };
+
+                    cluster.download().await
+                });
+
+        let future = tokio::spawn(async move {
+            let message_count = cmp::min(ids.len() * 2, 100);
+            let mut set = ids.clone();
+
+            'outer: while let Some(id) = ids.first() {
+                let mut messages =
+                    match api::fetch_messages(&token, &channel, *id, message_count).await {
+                        Ok(messages) => messages,
+                        Err(err) => {
+                            log::error!("failed to fetch messages: {}", err);
+                            return Err(err);
+                        }
+                    };
+
+                for message in messages.iter_mut() {
+                    let message_id = message
+                        .id
+                        .parse::<u64>()
+                        .expect("failed to parse message ID");
+
+                    if let Some((idx, id)) = set
+                        .iter_mut()
+                        .enumerate()
+                        .find(|(_, id)| **id == message_id)
+                    {
+                        ids.retain(|id| *id != message_id);
+                        let attachments = message.attachments.take();
+                        let cluster = writer.cluster(idx, attachments);
+                        *id = 0;
+
+                        let sender = senders.pop().unwrap();
+                        if sender.send(cluster).is_err() {
+                            break 'outer;
+                        }
+                    }
+                }
+            }
+
+            Ok(())
+        });
+
+        let state = unsafe { &*self.rt.this };
+        tokio::spawn(async move {
+            let now = Instant::now();
+
+            let futures = future::try_join3(
+                downloaders,
+                Flatten::flatten(future),
+                Flatten::flatten(crc_handle),
+            );
+            let futures = select! {
+                futures = futures => futures,
+                _ = cancel_rx => {
+                    log::debug!("Download canceled");
+                    if let Err(err) = fs::remove_file(&target) {
+                        log::error!("failed to remove file: {}", err);
+                    }
+
+                    return;
+                }
+            };
+
+            let took = now.elapsed().as_secs_f64();
+            log::info!("Downloaded {} cluster(s) in {:.2}s", cluster_count, took);
+
+            let mut state = state.write().await;
+            let handle = unsafe { state.rt.app_handle.as_ref().unwrap() };
+            let crc = match futures {
+                Ok((_, _, crc)) => crc,
+                Err(err) => {
+                    log::error!("Failed to download file, reason: {}", err);
+
+                    handle
+                        .emit_all("download_error", &err)
+                        .expect("failed to emit download_error");
+
+                    state.rt.download_queue.clear();
+                    state.rt.job = Job::Idle;
+
+                    return;
+                }
+            };
+
+            if let Some(file) = state.files.iter().find(|file| file.id == id)
+                && crc.is_some_and(|crc| crc != file.crc32)
+            {
+                log::warn!("CRC32 mismatch: {:x} != {:x}", crc.unwrap(), file.crc32);
+                handle
+                    .emit_all(
+                        "download_error",
+                        &DownloadError::ChecksumMismatch(crc.unwrap(), file.crc32),
+                    )
+                    .expect("failed to emit download_error");
+
+                state.rt.download_queue.clear();
+                state.rt.job = Job::Idle;
+
+                return;
+            }
+
+            handle
+                .emit_all("file_downloaded", &target)
+                .expect("failed to emit file_downloaded");
+
+            state.download();
+        });
+    }
 }

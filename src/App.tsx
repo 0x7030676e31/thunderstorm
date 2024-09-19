@@ -61,6 +61,8 @@ export default function App() {
     const settings = JSON.parse(await invoke<string>("get_settings"));
     const files = JSON.parse(await invoke<string>("get_files"));
 
+    console.log(files);
+
     batch(() => {
       setSettings(settings);
       setFiles(files);
