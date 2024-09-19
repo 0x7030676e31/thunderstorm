@@ -1,7 +1,9 @@
 import { Accessor, Match, Setter, Switch, batch, createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import { Portal } from "solid-js/web";
-import { IoWarningOutline, IoEyeOutline, IoEyeOffOutline } from "solid-icons/io";
 import { invoke } from "@tauri-apps/api";
+import { IoWarningOutline, IoEyeOutline, IoEyeOffOutline, IoClose } from "solid-icons/io";
+import { AiOutlineExclamationCircle } from "solid-icons/ai";
+import { FaSolidCheck } from "solid-icons/fa";
 import styles from "./settings.module.scss";
 
 type Props = {
@@ -56,7 +58,7 @@ export default function Settings(props: Props) {
     document.removeEventListener("keydown", onKeyDown);
   });
 
-  async function submit(data: { [key: string]: string }) {
+  async function submit(data: { [key: string]: string | boolean }) {
     if (!modal() && tab() === 0 && (data.channel !== props.settings()!.channel || data.guild !== props.settings()!.guild)) {
       setModal(true);
       return;
@@ -189,7 +191,7 @@ export default function Settings(props: Props) {
 type TabProps = {
   settings: Accessor<ISettings>;
   setDiff: (diff: boolean) => void;
-  onSubmit: (data: { [key: string]: string }) => void;
+  onSubmit: (data: { [key: string]: string | boolean }) => void;
 };
 
 function DiscordTab({ settings, setDiff, onSubmit }: TabProps) {
@@ -317,15 +319,91 @@ function DiscordTab({ settings, setDiff, onSubmit }: TabProps) {
   );
 }
 
-// Enable encryption
-// Change 
+function SecurityAndIntegrationTab({ settings, setDiff, onSubmit }: TabProps) {
+  const [encryption, setEncryption] = createSignal(settings().do_encrypt);
+  const [checksum, setChecksum] = createSignal(settings().do_checksum);
 
-// Enable checksum
+  createEffect(() => {
+    setDiff(
+      encryption() !== settings().do_encrypt ||
+      checksum() !== settings().do_checksum
+    );
+  });
 
-function SecurityAndIntegrationTab({ }: TabProps) {
+  const reset = () => {
+    setEncryption(settings().do_encrypt);
+    setChecksum(settings().do_checksum);
+  }
+
+  const submit = () => {
+    onSubmit({
+      do_encrypt: encryption(),
+      do_checksum: checksum(),
+    });
+  }
+
+  onMount(() => {
+    document.addEventListener("reset", reset);
+    document.addEventListener("submit", submit);
+  });
+
+  onCleanup(() => {
+    document.removeEventListener("reset", reset);
+    document.removeEventListener("submit", submit);
+  });
+
   return (
     <div>
       <h1>Security & Integration</h1>
+
+      <div class={styles.inline}>
+        <AiOutlineExclamationCircle />
+        <h2>Important</h2>
+      </div>
+
+      <p class={styles.sublabel}>Changing this settings may affect the upload speed and the overall performance of the application.</p>
+
+      <Checkbox
+        checked={encryption}
+        onToggle={setEncryption}
+        label="Enable data encryption"
+        note="Encrypt all data before uploading it to the server with a randomly generated key."
+      />
+
+      <div class={styles.separator} />
+
+      <Checkbox
+        checked={checksum}
+        onToggle={setChecksum}
+        label="Enable file integrity check"
+        note="Calculate the checksum of the file before uploading it to the server and verify it after downloading it."
+      />
+
+    </div>
+  );
+}
+
+type CheckboxProps = {
+  checked: Accessor<boolean>;
+  onToggle: Setter<boolean>;
+  label: string;
+  note: string;
+}
+
+function Checkbox({ checked, onToggle, label, note }: CheckboxProps) {
+  return (
+    <div class={styles.checkbox}>
+      <div class={styles.checkboxInline}>
+        <p class={styles.checkboxLabel}>{label}</p>
+        <div class={styles.checkboxInput} onClick={() => onToggle(!checked())} classList={{ [styles.checked]: checked() }}>
+          <div class={styles.checkboxCheck} classList={{ [styles.checked]: checked() }}>
+            <FaSolidCheck class={styles.tick} classList={{ [styles.checked]: checked() }} />
+            <IoClose class={styles.cross} classList={{ [styles.checked]: !checked() }} />
+          </div>
+        </div>
+      </div>
+
+      <p class={styles.checkboxNote}>{note}</p>
     </div>
   );
 }

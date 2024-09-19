@@ -14,6 +14,8 @@ declare global {
     token: string;
     channel: string;
     guild: string;
+    do_encrypt: boolean;
+    do_checksum: boolean;
   }
 
   interface IError {

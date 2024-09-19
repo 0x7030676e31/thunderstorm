@@ -464,3 +464,90 @@
     }
   }
 }
+
+.checkbox {
+  $transition: all 0.25s ease;
+  $width: 3rem;
+  $height: 1.5rem;
+  $padding: 1px;
+
+  .checkboxInline {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .checkboxLabel {
+    color: $text;
+    font-weight: 600;
+    font-size: 0.95rem;
+    padding: 6px 0;
+    user-select: none;
+    margin: 0;
+  }
+
+  .checkboxNote {
+    color: $overlay0;
+    font-size: 0.85rem;
+    font-weight: 500;
+    padding: 0 0 6px 0;
+    user-select: none;
+    margin: 4px calc($width + 4px) 0 0;
+  }
+
+  .checkboxInput {
+    width: $width;
+    height: $height;
+    background-color: $crust;
+    border-radius: 34rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    border: 1px solid $surface0;
+    padding: $padding;
+    transition: $transition;
+
+    &.checked {
+      background-color: darken($green, 25%);
+    }
+  }
+
+  .checkboxCheck {
+    width: calc($height - 2 * $padding);
+    height: calc($height - 2 * $padding);
+    background-color: white;
+    border-radius: 50%;
+    margin-left: 0;
+    display: flex;
+    position: relative;
+    justify-content: center;
+    align-items: center;
+    transition: $transition;
+
+    &.checked {
+      margin-left: calc($width - 2 * $padding - ($height - 2 * $padding));
+    }
+  }
+
+  svg {
+    position: absolute;
+    color: transparent;
+    transition: $transition;
+
+    &.tick {
+      font-size: calc($height - 2 * $padding - 8px);
+    }
+
+    &.cross {
+      font-size: calc($height - 2 * $padding - 4px);
+    }
+
+    &.checked.tick {
+      color: darken($green, 25%);
+    }
+
+    &.checked.cross {
+      color: $crust;
+    }
+  }
+}

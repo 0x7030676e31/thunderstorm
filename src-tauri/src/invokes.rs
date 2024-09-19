@@ -66,6 +66,8 @@ pub struct PartialSettings {
     token: Option<String>,
     channel: Option<String>,
     guild: Option<String>,
+    do_encrypt: Option<bool>,
+    do_checksum: Option<bool>,
 }
 
 #[tauri::command]
@@ -95,6 +97,14 @@ pub async fn set_settings(state: State<'_, AppState>, settings: PartialSettings)
 
         log::info!("Changed sensitive settings, erasing data");
         state.files.clear();
+    }
+
+    if let Some(do_encrypt) = settings.do_encrypt {
+        state.do_encrypt = do_encrypt;
+    }
+
+    if let Some(do_checksum) = settings.do_checksum {
+        state.do_checksum = do_checksum;
     }
 
     state.write();

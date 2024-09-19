@@ -726,9 +726,7 @@ impl State {
                 .emit_all("file_downloaded", &target)
                 .expect("failed to emit file_downloaded");
 
-            if !state.rt.download_queue.is_empty() {
-                state.download();
-            }
+            state.download();
         });
     }
 
