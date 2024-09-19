@@ -1,6 +1,7 @@
+use crate::errors::DownloadError;
 use crate::errors::UploadError;
-use crate::io::reader::Cluster;
-use crate::{consts::SLICE_SIZE, errors::DownloadError};
+use crate::io::consts::SLICE_SIZE;
+use crate::io::Cluster;
 
 use std::cmp;
 use std::sync::Arc;
@@ -88,10 +89,14 @@ pub async fn preupload<'a>(
     }
 }
 
-pub async fn upload(
+pub async fn secure_upload<T>(
     details: &[UploadDetailsInner],
-    mut cluster: Cluster,
-) -> Result<(), UploadError> {
+    mut cluster: T,
+) -> Result<(), UploadError>
+where
+    T: Cluster + Send + Sync,
+    <T as Cluster>::Iter: Send + Sync + 'static,
+{
     let client = Client::builder()
         .connect_timeout(CONNECT_TIMEOUT)
         .build()
@@ -99,6 +104,7 @@ pub async fn upload(
 
     let futures = details.iter().map(|detail| {
         let stream = stream::iter(cluster.next_slice().unwrap());
+
         client
             .put(&detail.upload_url)
             .header("Content-Type", "application/octet-stream")

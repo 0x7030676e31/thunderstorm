@@ -7,15 +7,14 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 mod api;
-mod consts;
-mod errors;
 mod invokes;
 mod io;
 mod levenshtein;
 mod state;
 mod utils;
 
-type AppState = Arc<RwLock<state::State>>;
+pub use state::{errors, model};
+type AppState = Arc<RwLock<model::State>>;
 
 #[tokio::main]
 async fn main() {
@@ -29,7 +28,7 @@ async fn main() {
         env!("CARGO_PKG_VERSION")
     );
 
-    let state = state::State::new();
+    let state = model::State::new();
     let state = Arc::new(RwLock::new(state));
 
     let mut app_state = state.write().await;
