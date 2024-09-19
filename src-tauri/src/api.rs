@@ -84,15 +84,15 @@ pub async fn preupload<'a>(
 
                 return Ok(details.attachments);
             }
-            _ => return Err(UploadError::Unknown((status.as_u16(), status.to_string()))),
+            _ => {
+                log::error!("Failed to preupload resource: {}", req.text().await?);
+                return Err(UploadError::Unknown((status.as_u16(), status.to_string())));
+            }
         }
     }
 }
 
-pub async fn secure_upload<T>(
-    details: &[UploadDetailsInner],
-    mut cluster: T,
-) -> Result<(), UploadError>
+pub async fn upload<T>(details: &[UploadDetailsInner], mut cluster: T) -> Result<(), UploadError>
 where
     T: Cluster + Send + Sync,
     <T as Cluster>::Iter: Send + Sync + 'static,
@@ -117,6 +117,7 @@ where
         let response = response.map_err(UploadError::Reqwest)?;
         let status = response.status();
         if !status.is_success() {
+            log::error!("Failed to upload resource: {}", response.text().await?);
             return Err(UploadError::Unknown((status.as_u16(), status.to_string())));
         }
     }
@@ -152,6 +153,8 @@ pub async fn finalize(
         attachments.collect::<Vec<_>>().join(","),
         channel
     );
+
+    log::debug!("Finalizing resource: {}", body);
     let url = format!("https://discord.com/api/v9/channels/{}/messages", channel);
 
     loop {
@@ -184,7 +187,10 @@ pub async fn finalize(
                 // This should never fail
                 return Ok(message.id.parse().expect("Failed to parse message ID"));
             }
-            _ => return Err(UploadError::Unknown((status.as_u16(), status.to_string()))),
+            _ => {
+                log::error!("Failed to finalize resource: {}", req.text().await?);
+                return Err(UploadError::Unknown((status.as_u16(), status.to_string())));
+            }
         }
     }
 }

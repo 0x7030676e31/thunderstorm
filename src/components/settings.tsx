@@ -105,7 +105,10 @@ export default function Settings(props: Props) {
           Application
         </div>
         <div class={styles.tab} classList={{ [styles.active]: tab() === 3 }} onClick={() => changeTab(3)}>
-          [TBD]
+          [ ... ]
+        </div>
+        <div class={styles.tab} classList={{ [styles.active]: tab() === 4 }} onClick={() => changeTab(4)}>
+          [ ... ]
         </div>
       </div>
 
@@ -367,7 +370,7 @@ function SecurityAndIntegrationTab({ settings, setDiff, onSubmit }: TabProps) {
         checked={encryption}
         onToggle={setEncryption}
         label="Enable data encryption"
-        note="Encrypt all data before uploading it to the server with a randomly generated key."
+        note="Encrypt all data before uploading it to the server using a randomly generated key. Please note that enabling this option may significantly impact performance and slow down the upload process. Files that are already encrypted will be automatically decrypted upon download."
       />
 
       <div class={styles.separator} />
@@ -376,7 +379,7 @@ function SecurityAndIntegrationTab({ settings, setDiff, onSubmit }: TabProps) {
         checked={checksum}
         onToggle={setChecksum}
         label="Enable file integrity check"
-        note="Calculate the checksum of the file before uploading it to the server and verify it after downloading it."
+        note="Calculate the checksum of the file before uploading it to the server and verify it after downloading. While this may slightly affect upload performance, it ensures the integrity of the file and prevents corruption during the download process. This setting is recommended for all users."
       />
 
     </div>

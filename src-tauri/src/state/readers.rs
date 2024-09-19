@@ -186,7 +186,7 @@ impl State {
                     };
 
                     let index = cluster.index as usize;
-                    api::secure_upload(&details, cluster).await?;
+                    api::upload(&details, cluster).await?;
 
                     let id = api::finalize(&token2, &channel2, &details).await?;
                     sender
@@ -390,7 +390,7 @@ impl State {
                     };
 
                     let index = cluster.index as usize;
-                    api::secure_upload(&details, cluster).await?;
+                    api::upload(&details, cluster).await?;
 
                     let id = api::finalize(&token2, &channel2, &details).await?;
                     sender

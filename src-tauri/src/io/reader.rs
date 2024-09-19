@@ -30,7 +30,7 @@ impl InsecureReader {
         let file = File::open(path.as_ref())?;
         let size = file.metadata()?.len();
 
-        let slices = (size + CLUSTER_SIZE - 1) / CLUSTER_SIZE;
+        let slices = (size + SLICE_SIZE - 1) / SLICE_SIZE;
         let clusters = (slices + CLUSTER_CAP - 1) / CLUSTER_CAP;
 
         Ok(Self {
@@ -45,6 +45,7 @@ impl InsecureReader {
     }
 
     pub fn next_cluster(&mut self) -> Option<InsecureClusterR> {
+        log::debug!("Next cluster: {} / {}", self.cluster, self.clusters);
         if self.cluster == self.clusters {
             return None;
         }
@@ -90,6 +91,7 @@ impl Cluster for InsecureClusterR {
     type Iter = InsecureSlice;
 
     fn next_slice(&mut self) -> Option<Self::Iter> {
+        log::debug!("Next slice: {} / {}", self.slice, self.slices);
         if self.slice == self.slices {
             return None;
         }
@@ -150,7 +152,7 @@ impl Iterator for InsecureSlice {
         let already_read = self.index * BUFFER_SIZE_I;
         let position = self.position + already_read;
 
-        let buffer_size = cmp::min(SLICE_SIZE, already_read);
+        let buffer_size = cmp::min(BUFFER_SIZE_I, SLICE_SIZE - already_read);
         let buffer_size = cmp::min(buffer_size, self.file_size.saturating_sub(position));
 
         if buffer_size == 0 {

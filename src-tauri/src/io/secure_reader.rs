@@ -66,6 +66,7 @@ impl SecureReader {
     }
 
     pub fn next_cluster(&mut self) -> Option<SecureClusterR> {
+        log::debug!("Next cluster: {} / {}", self.cluster, self.clusters);
         if self.cluster == self.clusters {
             return None;
         }
@@ -115,6 +116,7 @@ impl Cluster for SecureClusterR {
     type Iter = SecureSlice;
 
     fn next_slice(&mut self) -> Option<Self::Iter> {
+        log::debug!("Next slice: {} / {}", self.slice, self.slices);
         if self.slice == self.slices {
             return None;
         }
