@@ -194,11 +194,17 @@ impl State {
                         }
                     };
 
+                let id = *id;
+                let mut has_found = false;
                 for message in messages.iter_mut() {
                     let message_id = message
                         .id
                         .parse::<u64>()
                         .expect("failed to parse message ID");
+
+                    if message_id == id {
+                        has_found = true;
+                    }
 
                     if let Some((idx, id)) = set
                         .iter_mut()
@@ -215,6 +221,11 @@ impl State {
                             break 'outer;
                         }
                     }
+                }
+
+                if !has_found {
+                    log::warn!("Message not found: {}", id);
+                    return Err(DownloadError::NotFoundRemote);
                 }
             }
 
@@ -326,7 +337,7 @@ impl State {
             .then(|| mpsc::channel::<(u64, Hasher)>(4))
             .map_or_else(|| (None, None), |(tx, rx)| (Some(tx), Some(rx)));
 
-        let slices = file.size / SLICE_SIZE;
+        let slices = (file.size + SLICE_SIZE - 1) / SLICE_SIZE;
         let crc_handle = tokio::spawn(async move {
             let mut rx = match crc_rx {
                 Some(rx) => rx,
@@ -335,7 +346,7 @@ impl State {
 
             let mut hashers = vec![unsafe { std::mem::zeroed() }; slices as usize];
             while let Some((idx, hasher)) = rx.recv().await {
-                hashers.insert(idx as usize, hasher);
+                hashers[idx as usize] = hasher;
             }
 
             let mut hasher = Hasher::new();
@@ -397,11 +408,17 @@ impl State {
                         }
                     };
 
+                let id = *id;
+                let mut has_found = false;
                 for message in messages.iter_mut() {
                     let message_id = message
                         .id
                         .parse::<u64>()
                         .expect("failed to parse message ID");
+
+                    if message_id == id {
+                        has_found = true;
+                    }
 
                     if let Some((idx, id)) = set
                         .iter_mut()
@@ -418,6 +435,11 @@ impl State {
                             break 'outer;
                         }
                     }
+                }
+
+                if !has_found {
+                    log::warn!("Message not found: {}", id);
+                    return Err(DownloadError::NotFoundRemote);
                 }
             }
 

@@ -322,7 +322,7 @@ impl State {
                     hashers.resize(idx + 1, unsafe { std::mem::zeroed() });
                 }
 
-                hashers.insert(idx, hasher);
+                hashers[idx] = hasher;
             }
 
             let mut hasher = Hasher::new();
@@ -389,7 +389,7 @@ impl State {
                         Err(_) => return Ok(()), // TODO: comment why returning Ok(()) is actually ok
                     };
 
-                    let index = cluster.index as usize;
+                    let index = cluster.cluster_index as usize;
                     api::upload(&details, cluster).await?;
 
                     let id = api::finalize(&token2, &channel2, &details).await?;

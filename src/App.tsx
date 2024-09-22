@@ -29,6 +29,7 @@ export default function App() {
   let unlistenEraseFiles: UnlistenFn | null = null;
   let unlistenFileUploaded: UnlistenFn | null = null;
   let unlistenUploadError: UnlistenFn | null = null;
+  let unlistenDownloadError: UnlistenFn | null = null;
 
   onMount(async () => {
     unlistenEraseFiles = await listen("erase_files", async () => {
@@ -58,6 +59,16 @@ export default function App() {
       });
     });
 
+    unlistenDownloadError = await listen<Omit<IError, "job">>("download_error", async data => {
+      batch(() => {
+        setErrorOpen(true);
+        setError({
+          job: "download",
+          ...data.payload,
+        });
+      });
+    });
+
     const settings = JSON.parse(await invoke<string>("get_settings"));
     const files = JSON.parse(await invoke<string>("get_files"));
 
@@ -74,6 +85,7 @@ export default function App() {
     unlistenEraseFiles?.();
     unlistenFileUploaded?.();
     unlistenUploadError?.();
+    unlistenDownloadError?.();
   });
 
   createEffect(async () => {

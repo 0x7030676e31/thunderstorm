@@ -45,6 +45,9 @@ function ErrorHeading({ job }: { job: Accessor<string> }) {
       <Match when={job() === "upload"}>
         <h1>Upload Error</h1>
       </Match>
+      <Match when={job() === "download"}>
+        <h1>Download Error</h1>
+      </Match>
     </Switch>
   );
 }
@@ -79,6 +82,29 @@ function ErrorBody({ type, message }: { type: Accessor<string>, message: Accesso
         </Match>
         <Match when={type() === "Unknown"}>
           <h2> Unknown Error </h2>
+          <p>
+            {message()}
+          </p>
+        </Match>
+        <Match when={type() === "ChecksumMismatch"}>
+          <h2> Checksum Mismatch </h2>
+          <p>
+            The file you downloaded seems to be corrupted. Please try again.
+            <br />
+            <br />
+            {message().split("\n").map((line, i) => (
+              <span>{line}{i === 0 && <br />}</span>
+            ))}
+          </p>
+        </Match>
+        <Match when={type() === "NotFoundRemote"}>
+          <h2> File Not Found </h2>
+          <p>
+            The file you tried to download does not exist on the discord server.
+          </p>
+        </Match>
+        <Match when={type() === "EncryptionError"}>
+          <h2> Encryption Error </h2>
           <p>
             {message()}
           </p>

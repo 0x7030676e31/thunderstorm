@@ -12,6 +12,7 @@ export default function Footer() {
 
   let unlistenJobCanceled: UnlistenFn | null = null;
   let unlistenUploadError: UnlistenFn | null = null;
+  let unlistenDownloadError: UnlistenFn | null = null;
 
   onMount(async () => {
     unlistenJobCanceled = await listen("job_canceled", () => {
@@ -21,11 +22,16 @@ export default function Footer() {
     unlistenUploadError = await listen("upload_error", () => {
       setFinished(true);
     });
+
+    unlistenDownloadError = await listen("download_error", () => {
+      setFinished(true);
+    });
   });
 
   onCleanup(() => {
     unlistenJobCanceled?.();
     unlistenUploadError?.();
+    unlistenDownloadError?.();
   });
 
   return (

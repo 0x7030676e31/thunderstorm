@@ -45,7 +45,6 @@ impl InsecureReader {
     }
 
     pub fn next_cluster(&mut self) -> Option<InsecureClusterR> {
-        log::debug!("Next cluster: {} / {}", self.cluster, self.clusters);
         if self.cluster == self.clusters {
             return None;
         }
@@ -59,9 +58,9 @@ impl InsecureReader {
         Some(InsecureClusterR {
             file: self.file.clone(),
             file_size: self.file_size,
-            slices,
-            slice: 0,
-            index: self.cluster as u64 - 1,
+            local_total_slices: slices,
+            slice_counter: 0,
+            cluster_index: self.cluster as u64 - 1,
             read_sender: self.read_sender.clone(),
             crc_sender: self.crc_sender.clone(),
         })
@@ -71,9 +70,9 @@ impl InsecureReader {
 pub struct InsecureClusterR {
     file: Arc<Mutex<File>>,
     file_size: u64,
-    slices: usize,
-    slice: usize,
-    pub index: u64,
+    local_total_slices: usize,
+    slice_counter: usize,
+    pub cluster_index: u64,
     read_sender: mpsc::Sender<usize>,
     crc_sender: CrcSender,
 }
@@ -83,7 +82,10 @@ unsafe impl Sync for InsecureClusterR {}
 
 impl InsecureClusterR {
     pub fn get_size(&self) -> u64 {
-        cmp::min(CLUSTER_SIZE, self.file_size - self.index * CLUSTER_SIZE)
+        cmp::min(
+            CLUSTER_SIZE,
+            self.file_size - self.cluster_index * CLUSTER_SIZE,
+        )
     }
 }
 
@@ -91,20 +93,23 @@ impl Cluster for InsecureClusterR {
     type Iter = InsecureSlice;
 
     fn next_slice(&mut self) -> Option<Self::Iter> {
-        log::debug!("Next slice: {} / {}", self.slice, self.slices);
-        if self.slice == self.slices {
+        log::debug!(
+            "Next slice: {} / {}",
+            self.slice_counter,
+            self.local_total_slices
+        );
+        if self.slice_counter == self.local_total_slices {
             return None;
         }
 
-        let this_slice = self.index * CLUSTER_CAP + self.slice as u64;
-        self.slice += 1;
+        let slice_index = self.cluster_index * CLUSTER_CAP + self.slice_counter as u64;
+        self.slice_counter += 1;
 
         Some(InsecureSlice {
             file: self.file.clone(),
-            position: this_slice * SLICE_SIZE,
+            position_in_slice: 0,
             file_size: self.file_size,
-            slice: this_slice,
-            index: self.index,
+            slice_index,
             read_sender: self.read_sender.clone(),
             crc_sender: self.crc_sender.clone(),
             crc32: Hasher::new(),
@@ -114,10 +119,9 @@ impl Cluster for InsecureClusterR {
 
 pub struct InsecureSlice {
     file: Arc<Mutex<File>>,
-    position: u64,
+    position_in_slice: u64,
     file_size: u64,
-    slice: u64,
-    index: u64,
+    slice_index: u64,
     read_sender: mpsc::Sender<usize>,
     crc_sender: CrcSender,
     crc32: Hasher,
@@ -131,7 +135,7 @@ impl InsecureSlice {
         let sender = mem::replace(&mut self.crc_sender, mpsc::channel(1).0);
         let hasher = mem::replace(&mut self.crc32, Hasher::new());
 
-        let slice = self.slice;
+        let slice = self.slice_index;
         tokio::spawn(async move {
             if let Err(err) = sender.send((slice, hasher)).await {
                 log::error!("Failed to send CRC32: {:?}", err);
@@ -144,16 +148,15 @@ impl Iterator for InsecureSlice {
     type Item = Result<Vec<u8>, Error>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.index == BUFFERS_PER_SLICE {
+        if self.position_in_slice == SLICE_SIZE {
             self.send_crc();
             return None;
         }
 
-        let already_read = self.index * BUFFER_SIZE_I;
-        let position = self.position + already_read;
+        let position = self.position_in_slice + self.slice_index * SLICE_SIZE;
 
-        let buffer_size = cmp::min(BUFFER_SIZE_I, SLICE_SIZE - already_read);
-        let buffer_size = cmp::min(buffer_size, self.file_size.saturating_sub(position));
+        let buffer_size = cmp::min(self.file_size.saturating_sub(position), BUFFER_SIZE_I);
+        let buffer_size = cmp::min(SLICE_SIZE, buffer_size);
 
         if buffer_size == 0 {
             self.send_crc();
@@ -170,7 +173,6 @@ impl Iterator for InsecureSlice {
         drop(file);
 
         self.crc32.update(&buffer);
-        self.index += 1;
 
         let size = buffer.len();
         let sender = self.read_sender.clone();
@@ -180,6 +182,7 @@ impl Iterator for InsecureSlice {
             }
         });
 
+        self.position_in_slice += buffer_size;
         Some(Ok(buffer))
     }
 }
