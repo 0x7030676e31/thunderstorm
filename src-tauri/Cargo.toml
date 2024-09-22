@@ -1,6 +1,6 @@
 [package]
 name = "thunderstorm"
-version = "0.0.3"
+version = "0.0.4"
 description = "Yet another discord storage client"
 authors = ["0x7030676e31"]
 edition = "2021"

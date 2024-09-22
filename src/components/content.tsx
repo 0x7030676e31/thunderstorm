@@ -23,11 +23,14 @@ type Props = {
   order: Accessor<number[] | null>;
 }
 
-const fmt = new Intl.DateTimeFormat(undefined, {
+const fmtDate = new Intl.DateTimeFormat(undefined, {
   weekday: "short",
   year: "numeric",
   month: "short",
   day: "numeric",
+});
+
+const fmtTime = new Intl.DateTimeFormat(undefined, {
   hour: "numeric",
   minute: "numeric",
   second: "numeric",
@@ -123,8 +126,11 @@ function File({ selected, onClick, path, size, created_at, encryption_key }: IFi
       <div class={styles.size}>
         {unit(size)}
       </div>
+      <div class={styles.date}>
+        {fmtDate.format(new Date(created_at * 1000))},
+      </div>
       <div>
-        {fmt.format(new Date(created_at * 1000))}
+        {fmtTime.format(new Date(created_at * 1000))}
       </div>
     </div>
   );

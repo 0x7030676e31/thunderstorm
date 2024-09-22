@@ -280,7 +280,6 @@
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    position: relative;
 
     &:focus-within {
       border-color: $text;
@@ -297,15 +296,15 @@
       font-weight: 500;
       background-color: transparent;
       border: none;
-      width: 100%;
-    
+      outline: none;
+      flex: 1;
+
       &::placeholder {
         color: $overlay1;
       }
     }
     
     .eye {
-      position: absolute;
       right: 0.5rem;
       color: $overlay1;
       font-size: 1.25rem;
@@ -313,6 +312,7 @@
       transition: all 0.1s ease;
       display: flex;
       align-items: center;
+      margin-right: 0.5rem;
 
       &:hover {
         color: $text;

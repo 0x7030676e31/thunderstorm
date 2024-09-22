@@ -8,6 +8,7 @@
   display: flex;
   flex-shrink: 0;
   overflow: hidden;
+  z-index: 900;
   height: 0;
   gap: 16px;
   transition: height 0.2s ease, padding 0.2s ease;
