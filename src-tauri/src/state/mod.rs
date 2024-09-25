@@ -1,4 +1,6 @@
+pub mod bin;
 pub mod errors;
 pub mod model;
-pub mod readers;
-pub mod writers;
+
+mod readers;
+mod writers;

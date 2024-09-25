@@ -18,6 +18,7 @@ declare global {
     guild: string;
     do_encrypt: boolean;
     do_checksum: boolean;
+    download_location: string;
   }
 
   interface IError {

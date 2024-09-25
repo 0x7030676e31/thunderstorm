@@ -1,4 +1,4 @@
-use crate::utils::path;
+use crate::utils::{download_path, path};
 use crate::AppState;
 
 use std::collections::VecDeque;
@@ -10,6 +10,8 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 use tokio::sync::oneshot;
+
+pub const CURRENT_VERSION: u16 = 2;
 
 #[derive(Debug)]
 #[allow(dead_code)]
@@ -87,6 +89,7 @@ pub struct State {
     pub token: String,
     pub do_encrypt: bool,
     pub do_checksum: bool,
+    pub download_location: String,
     pub files: Vec<File>,
     #[serde(skip)]
     pub rt: RtState,
@@ -104,6 +107,7 @@ impl Default for State {
             token: String::new(),
             do_encrypt: true,
             do_checksum: true,
+            download_location: download_path().to_string(),
             files: Vec::new(),
             rt: RtState::default(),
         }
@@ -149,7 +153,7 @@ impl State {
             }
         };
 
-        match bincode::deserialize(&file) {
+        match bincode::deserialize(&file[2..]) {
             Ok(state) => {
                 log::info!("State file loaded, initializing...");
                 state
@@ -174,6 +178,7 @@ impl State {
             }
         };
 
+        let state = [CURRENT_VERSION.to_be_bytes().to_vec(), state].concat();
         match fs::write(&state_file, &state) {
             Ok(_) => log::debug!("State file written: {} bytes", state.len()),
             Err(err) => log::error!("failed to write state file: {}", err),

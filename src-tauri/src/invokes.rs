@@ -18,6 +18,7 @@ pub struct Settings<'a> {
     guild: &'a String,
     do_encrypt: bool,
     do_checksum: bool,
+    download_location: &'a String,
 }
 
 #[tauri::command]
@@ -29,6 +30,7 @@ pub async fn get_settings(state: State<'_, AppState>) -> Result<String, ()> {
         guild: &state.guild_id,
         do_encrypt: state.do_encrypt,
         do_checksum: state.do_checksum,
+        download_location: &state.download_location,
     };
 
     Ok(serde_json::to_string(&settings).unwrap())
@@ -68,6 +70,7 @@ pub struct PartialSettings {
     guild: Option<String>,
     do_encrypt: Option<bool>,
     do_checksum: Option<bool>,
+    download_location: Option<String>,
 }
 
 #[tauri::command]
@@ -107,6 +110,10 @@ pub async fn set_settings(state: State<'_, AppState>, settings: PartialSettings)
         state.do_checksum = do_checksum;
     }
 
+    if let Some(download_location) = settings.download_location {
+        state.download_location = download_location;
+    }
+
     state.write();
     Ok(())
 }
@@ -140,7 +147,7 @@ pub async fn query(state: State<'_, AppState>, query: String) -> Result<Vec<u32>
                 .as_ref()
                 .map_or(0.0, |name| levenshtein(&query, &name));
 
-            (file.id, dist1.min(dist2))
+            (file.id, dist1.max(dist2))
         })
         .collect::<Vec<(u32, f64)>>();
 

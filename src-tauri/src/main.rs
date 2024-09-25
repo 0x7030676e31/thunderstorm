@@ -28,6 +28,10 @@ async fn main() {
         env!("CARGO_PKG_VERSION")
     );
 
+    if let Err(err) = state::bin::upgrade() {
+        log::error!("failed to upgrade state file: {}", err);
+    }
+
     let state = model::State::new();
     let state = Arc::new(RwLock::new(state));
 

@@ -1,8 +1,9 @@
 import { Accessor, Match, Setter, Switch, batch, createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import { Portal } from "solid-js/web";
 import { invoke } from "@tauri-apps/api";
+import { open } from "@tauri-apps/api/dialog";
 import { IoWarningOutline, IoEyeOutline, IoEyeOffOutline, IoClose } from "solid-icons/io";
-import { AiOutlineExclamationCircle } from "solid-icons/ai";
+import { AiOutlineExclamationCircle, AiOutlineFolderOpen } from "solid-icons/ai";
 import { FaSolidCheck } from "solid-icons/fa";
 import styles from "./settings.module.scss";
 
@@ -119,6 +120,9 @@ export default function Settings(props: Props) {
           </Match>
           <Match when={tab() === 1}>
             <SecurityAndIntegrationTab settings={props.settings} setDiff={setDiff} onSubmit={settings => submit(settings)} />
+          </Match>
+          <Match when={tab() === 2}>
+            <ApplicationTab settings={props.settings} setDiff={setDiff} onSubmit={settings => submit(settings)} />
           </Match>
         </Switch>
 
@@ -364,7 +368,7 @@ function SecurityAndIntegrationTab({ settings, setDiff, onSubmit }: TabProps) {
         <h2>Important</h2>
       </div>
 
-      <p class={styles.sublabel}>Changing this settings may affect the upload speed and the overall performance of the application.</p>
+      <p class={styles.sublabel}>Changing these settings may affect the upload speed and the overall performance of the application.</p>
 
       <Checkbox
         checked={encryption}
@@ -382,6 +386,59 @@ function SecurityAndIntegrationTab({ settings, setDiff, onSubmit }: TabProps) {
         note="Calculate the checksum of the file before uploading it to the server and verify it after downloading. While this may slightly affect upload performance, it ensures the integrity of the file and prevents corruption during the download process. This setting is recommended for all users."
       />
 
+    </div>
+  );
+}
+
+function ApplicationTab({ settings, setDiff, onSubmit }: TabProps) {
+  const [download, setDownload] = createSignal(settings().download_location);
+
+  createEffect(() => {
+    setDiff(
+      download() !== settings().download_location
+    );
+  });
+
+  const reset = () => {
+    setDownload(settings().download_location);
+  }
+
+  const submit = () => {
+    onSubmit({
+      download_location: download(),
+    });
+  }
+
+  onMount(() => {
+    document.addEventListener("reset", reset);
+    document.addEventListener("submit", submit);
+  });
+
+  onCleanup(() => {
+    document.removeEventListener("reset", reset);
+    document.removeEventListener("submit", submit);
+  });
+
+  return (
+    <div>
+      <h1>Application</h1>
+
+      <p class={styles.label}>DOWNLOAD PATH</p>
+      <div class={styles.pathPicker}>
+        <div class={styles.path}>{download()}</div>
+
+        <div class={styles.browse} onClick={async () => {
+          const path = await open({
+            directory: true,
+          });
+
+          if (path) {
+            setDownload(path as string);
+          }
+        }}>
+          <AiOutlineFolderOpen />
+        </div>
+      </div>
     </div>
   );
 }
