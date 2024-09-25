@@ -41,6 +41,12 @@
   }
 }
 
+@media (max-width: 1136px) {
+  .settings {
+    grid-template-columns: 244px 1fr 92px !important;
+  }
+}
+
 @keyframes shake {
   0% { transform: translate(-2px, -2px); }
   10% { transform: translate(3px, -4px); }

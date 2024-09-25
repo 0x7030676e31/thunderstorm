@@ -134,10 +134,24 @@ pub async fn query(state: State<'_, AppState>, query: String) -> Result<Vec<u32>
         .iter()
         .map(|file| {
             let name = file.path.split(split).last().unwrap().to_lowercase();
-            (file.id, levenshtein(&query, &name))
+            let dist1 = levenshtein(&query, &name);
+            let dist2 = file
+                .name
+                .as_ref()
+                .map_or(0.0, |name| levenshtein(&query, &name));
+
+            (file.id, dist1.min(dist2))
         })
         .collect::<Vec<(u32, f64)>>();
 
     results.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
     Ok(results.iter().map(|(id, _)| *id).collect())
+}
+
+#[tauri::command]
+pub async fn rename_file(state: State<'_, AppState>, id: u32, name: String) -> Result<(), ()> {
+    let mut state = state.write().await;
+    log::debug!("Renaming file {} to {}", id, name);
+    state.rename_file(id, name);
+    Ok(())
 }

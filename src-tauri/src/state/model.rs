@@ -2,6 +2,7 @@ use crate::utils::path;
 use crate::AppState;
 
 use std::collections::VecDeque;
+use std::ops::Not;
 use std::path::Path;
 use std::{fs, ptr};
 
@@ -113,6 +114,7 @@ impl Default for State {
 pub struct File {
     pub id: u32,
     pub path: String,
+    pub name: Option<String>,
     pub size: u64,
     pub download_ids: Vec<u64>,
     pub created_at: u64,
@@ -222,5 +224,17 @@ impl State {
         handle
             .emit_all("job_canceled", ())
             .expect("failed to emit job_canceled");
+    }
+
+    pub fn rename_file(&mut self, id: u32, name: String) {
+        if let Some(file) = self.files.iter_mut().find(|file| file.id == id) {
+            file.name = name.trim().is_empty().not().then(|| name);
+            file.updated_at = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("failed to get timestamp")
+                .as_secs();
+
+            self.write();
+        }
     }
 }

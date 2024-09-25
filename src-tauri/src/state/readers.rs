@@ -279,6 +279,7 @@ impl State {
             let file = File {
                 id: state.next_id(),
                 path: file,
+                name: None,
                 size: file_size,
                 download_ids: ids,
                 created_at: timestamp,
@@ -483,6 +484,7 @@ impl State {
             let file = File {
                 id: state.next_id(),
                 path: file,
+                name: None,
                 size: file_size,
                 download_ids: ids,
                 created_at: timestamp,

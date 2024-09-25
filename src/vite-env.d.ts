@@ -6,6 +6,7 @@ declare global {
   interface IFile {
     id: number;
     path: string;
+    name: string | null;
     size: number;
     created_at: number;
     encryption_key: null | number[];

@@ -7,13 +7,16 @@
   },
   "package": {
     "productName": "thunderstorm",
-    "version": "0.0.4"
+    "version": "0.0.5"
   },
   "tauri": {
     "allowlist": {
       "all": false,
       "os": {
         "all": true
+      },
+      "clipboard": {
+        "writeText": true
       },
       "dialog": {
         "all": false,
@@ -31,7 +34,7 @@
         "title": "Thunderstorm",
         "width": 1280,
         "height": 720,
-        "minWidth": 1136,
+        "minWidth": 920,
         "minHeight": 580
       }
     ],

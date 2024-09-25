@@ -125,6 +125,10 @@ $scrollbar-color-2: $mantle;
     .encrypted {
       background-color: mix($base, $mauve, 30%);
     }
+
+    input {
+      color: $base;
+    }
   }
 
   &:nth-child(even).selected > div {
@@ -137,6 +141,10 @@ $scrollbar-color-2: $mantle;
 
     .encrypted {
       background-color: mix($mantle, $mauve, 20%);
+    }
+
+    input {
+      color: $mantle;
     }
   }
 }
@@ -160,7 +168,7 @@ $scrollbar-color-2: $mantle;
     padding: 3px 0 0 2px;
     border-radius: 3px 0 0 0;
     width: fit-content;
-    transition: background-color 0.15s cubic-bezier(0, 1, 1, 0.95);
+    transition: all 0.15s cubic-bezier(0, 1, 1, 0.95);
   }
 }
 
@@ -168,6 +176,26 @@ $scrollbar-color-2: $mantle;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+  width: 100%;
+  box-sizing: border-box;
+
+  input {
+    font-size: 1rem;
+    color: $subtext0;
+    width: 100%;
+    background-color: transparent;
+    border: none;
+    outline: none;
+    box-sizing: border-box;
+    padding: 0;
+    cursor: pointer;
+    transition: color 0.15s cubic-bezier(0, 1, 1, 0.95);
+
+    &:focus {
+      color: $text;
+      cursor: text;
+    }
+  }
 }
 
 .size {
@@ -207,5 +235,93 @@ $scrollbar-color-2: $mantle;
 
   &.hovering {
     background-color: transparentize($mauve, 0.9);
+  }
+}
+
+.contextOverlay {
+  z-index: 1100;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background-color: transparent;
+  pointer-events: none;
+
+  &.active {
+    pointer-events: auto;
+  }
+
+  .context {
+    z-index: 1101;
+    width: 220px;
+    height: fit-content;
+    position: fixed;
+    background-color: $mantle;
+    border: 1px solid $overlay0;
+    border-radius: 10px;
+    box-shadow: 0 0 10px 0 rgba(0, 0, 0, 0.1);
+    pointer-events: none;
+    padding: 10px;
+    opacity: 0;
+    box-sizing: border-box;
+    transition: opacity 0.1s ease-in-out;
+
+    & > *:first-child {
+      margin-top: 0;
+    }
+
+    & > *:last-child {
+      margin-bottom: 0;
+    }
+
+    & > * {
+      margin: 3px 0;
+    }
+
+    .title {
+      width: 100%;
+      padding: 4px;
+      color: $text;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      overflow: hidden;
+      box-sizing: border-box;
+    }
+
+    .separator {
+      width: 100%;
+      height: 1px;
+      background-color: $overlay0;
+      margin: 5px 0;
+    }
+
+    .option {
+      width: 100%;
+      border-radius: 5px;
+      cursor: pointer;
+      color: $subtext0;
+      padding: 6px;
+      display: flex;
+      box-sizing: border-box;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.9rem;
+      transition: background-color 0.15s cubic-bezier(0, 1, 1, 0.95), color 0.15s cubic-bezier(0, 1, 1, 0.95);
+
+      &:hover {
+        background-color: transparentize($mauve, 0.85);
+        color: $text;
+      }
+
+      svg {
+        font-size: 1.3rem;
+      }
+    }
+  }
+
+  &.active .context {
+    pointer-events: auto;
+    opacity: 1;
   }
 }

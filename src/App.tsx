@@ -31,7 +31,20 @@ export default function App() {
   let unlistenUploadError: UnlistenFn | null = null;
   let unlistenDownloadError: UnlistenFn | null = null;
 
+  function onRename(e: CustomEvent<{ id: number, name: string }>) {
+    const { id, name } = e.detail;
+    const file = files().find(file => file.id === id);
+    if (!file) {
+      return;
+    }
+
+    file.name = name || file.path;
+    setFiles(files());
+  }
+
   onMount(async () => {
+    document.addEventListener("rename", onRename as any);
+
     unlistenEraseFiles = await listen("erase_files", async () => {
       batch(() => {
         setFiles([]);
@@ -82,6 +95,7 @@ export default function App() {
   });
 
   onCleanup(() => {
+    document.removeEventListener("rename", onRename as any);
     unlistenEraseFiles?.();
     unlistenFileUploaded?.();
     unlistenUploadError?.();
@@ -116,7 +130,15 @@ export default function App() {
         selected={selected().length}
         download={() => invoke("download_files", { files: selected() })}
         delete={() => setDeleteModalOpen(true)}
-        rename={() => { }}
+        rename={() => {
+          if (selected().length !== 1) {
+            return;
+          }
+
+          const event = new CustomEvent(`focus:${selected()[0]}`);
+          setTimeout(() => document.dispatchEvent(event), 0);
+          setSelected([]);
+        }}
       />
 
       <Show when={ready()}>
@@ -125,6 +147,8 @@ export default function App() {
           selected={selected}
           files={files}
           order={order}
+          download={async file => await invoke("download_files", { files: [file] })}
+          remove={() => setDeleteModalOpen(true)}
         />
       </Show>
 

@@ -56,6 +56,7 @@ async fn main() {
             invokes::set_settings,
             invokes::cancel,
             invokes::query,
+            invokes::rename_file,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
